@@ -1,0 +1,45 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.runViewer: 1
+Viewer.forceOriginStart: 1
+Viewer.width: 1024
+Viewer.height: 768
+Viewer.scaleFactor: 1
+Viewer.cameraFollow: 1
+Viewer.followDistance: 10
+
+Viewer.keyFrameColor: [0.0,0.0,1.0]
+Viewer.tweenFrameDirectColor: [1.0,0.0,1.0]
+Viewer.tweenFrameColor: [0.0,1.0,1.0]
+Viewer.mapPointsColor: [0.0,0.0,0.0]
+Viewer.mapPointsRefColor: [1.0,0.0,0.0]
+Viewer.featureLinesColor: [0.0,1.0,0.0]
+
+Viewer.windowIndTrackTitle: Indirect Tracking
+Viewer.windowDirTrackTitle: Direct Tracking
+Viewer.windowMapTitle: Mapping
+Viewer.windowSegmentTitle: Segmentation
+Viewer.windowMeshTitle: Mesh
+Viewer.mouseMoveFactor: 1
+Viewer.fov: 90
+Viewer.far: 1000
+Viewer.near: 1
+Viewer.featuresMaxDepth: 100
+#--------------------------------------------------------------------------------------------
+# Direct Tracking Parameters
+#--------------------------------------------------------------------------------------------
+DirTrackParams.runDirectTracking: 0
+DirTrackParams.patchRadius:       3
+DirTrackParams.nLevels:           4
+DirTrackParams.minUsed:         200
+DirTrackParams.trackCamIter:    6
+DirTrackParams.maxResidualPx:   0.1
+DirTrackParams.maxDirectError:   0.05
+DirTrackParams.scaleFactor:     1.2
+DirTrackParams.minGrad:         0.01
+DirTrackParams.huberDelta:      0.03
+DirTrackParams.kfDisplacement: 0.20
+DirTrackParams.kfMinFrames:    5

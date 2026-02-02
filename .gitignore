@@ -1,0 +1,57 @@
+CMakeLists.txt.user
+
+Examples/Monocular/mono_euroc
+Examples/Monocular/mono_kitti
+Examples/Monocular/mono_tum
+Examples/RGB-D/rgbd_tum
+
+Examples/ROS/ORB_SLAM2/CMakeLists.txt.user
+Examples/ROS/ORB_SLAM2/Mono
+Examples/ROS/ORB_SLAM2/MonoAR
+Examples/ROS/ORB_SLAM2/RGBD
+Examples/ROS/ORB_SLAM2/Stereo
+Examples/ROS/ORB_SLAM2/build/
+
+Examples/Stereo/stereo_euroc
+Examples/Stereo/stereo_kitti
+
+KeyFrameTrajectory.txt
+
+Thirdparty/DBoW2/build/
+Thirdparty/DBoW2/lib/
+Thirdparty/g2o/build/
+Thirdparty/g2o/config.h
+Thirdparty/g2o/lib/
+
+Vocabulary/ORBvoc.txt
+
+build/
+lib/
+
+*~
+
+# build outputs
+build/
+lib/
+Thirdparty/**/build/
+Thirdparty/**/lib/
+
+# ORB vocabulary (never commit)
+Vocabulary/ORBvoc.txt
+Vocabulary/ORBvoc.txt.tar.gz
+Vocabulary/*.tar.gz
+
+# example binaries / outputs
+Examples/Monocular/mono_*
+Examples/Stereo/stereo_*
+Examples/RGB-D/rgbd_*
+Examples/ROS/**/build/
+
+# local IDE junk
+.idea/
+*~
+
+# evaluation outputs
+Evaluations/
+FrameTrajectory.txt
+KeyFrameTrajectory.txt

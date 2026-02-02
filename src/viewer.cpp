@@ -1,0 +1,2582 @@
+#include "viewer.h"
+
+
+
+bool Viewer::initialize()
+{
+
+
+    m_width = m_slamViewerSettings->viewerParams.width;
+    m_height = m_slamViewerSettings->viewerParams.height;
+
+    m_windowIndTrackTitle = m_slamViewerSettings->viewerParams.windowIndTrackTitle;
+    m_windowDirTrackTitle = m_slamViewerSettings->viewerParams.windowDirTrackTitle;
+    m_windowMapTitle = m_slamViewerSettings->viewerParams.windowMapTitle;
+
+    //color
+    m_keyFrameColor = m_slamViewerSettings->viewerParams.keyFrameColor;
+    m_tweenFrameDirectColor = m_slamViewerSettings->viewerParams.tweenFrameDirectColor;
+    m_tweenFrameColor = m_slamViewerSettings->viewerParams.tweenFrameColor;
+    m_mapPointsColor = m_slamViewerSettings->viewerParams.mapPointsColor;
+    m_mapPointsRefColor = m_slamViewerSettings->viewerParams.mapPointsRefColor;
+    m_featureLinesColor = m_slamViewerSettings->viewerParams.featureLinesColor;
+
+    m_scaleFactor = m_slamViewerSettings->viewerParams.scaleFactor;
+    m_featuresMaxDepth = m_slamViewerSettings->viewerParams.featuresMaxDepth;
+
+    m_featuresMaxDepth *= m_scaleFactor;
+
+    initializeWindows();
+    if (m_windowFrames2D == nullptr)
+    {
+        Logger<std::string>::LogError("Viewer: Failed to initialize m_windowFrames2D window.");
+        return false;
+    }
+
+    if (m_windowMap3D == nullptr)
+    {
+        return false;
+    }
+
+
+    initializeCamera();
+
+
+    Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
+    return true;
+}
+
+void Viewer::run()
+{
+    if (!m_isInitialized)
+        initialize();
+    while(!m_stop.load())
+    {
+        m_newTime = static_cast<float>(SDL_GetTicks())/1000.0f;
+        float dt = [this](float newT, float& oldT)->float{float deltaT = newT - oldT; if(oldT == 0.0f) deltaT = 0.0f; oldT = newT; return deltaT; }(m_newTime, m_oldTime);
+
+        m_activeCamera->update(dt);
+
+        //avoid CPU-GPU transfer every frame
+        uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
+        if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
+        {
+            ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
+            updateMapPoints();
+        }
+
+        uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
+        if (ma_LastFramesUpdateNumber != framesUpdateNumber)
+        {
+            ma_LastFramesUpdateNumber = framesUpdateNumber;
+            updateFrames3D();
+        }
+
+        if(checkUpdateFramesFlag())
+        {
+            //updateDirectMapping();
+        }
+
+        render();
+
+
+        //get framerate (this is from viewer only!)
+        float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
+        SDL_Delay(33);
+    }
+}
+
+void Viewer::initializeWindows()
+{
+    const int widthOffset = m_width + 80;
+    const int heightOffset = m_height + 80;
+    // m_windowFrames2D Tracking Window (Main OpenGL Context)
+    m_windowFrames2D = GuiWindow::createWindow(50, heightOffset, m_width, m_height, m_windowIndTrackTitle);
+    if (!m_windowFrames2D)
+    {
+       Logger<std::string>::LogError("Viewer: Failed to initialize m_windowFrames2D tracking window.");
+        return;
+    }
+
+    ensureWindowContext(m_windowFrames2D->getDisplay(),
+                        m_windowFrames2D->getSurface(),
+                        m_windowFrames2D->getContext());
+
+    // shared OpenGL resources, valid for all
+    initializeBuffers();
+    initializeShaders();
+
+    m_trackLinesGfx = new Lines2D();
+    m_trackLinesGfx->initializeEmptyBuffer();
+
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    m_windowFrames2D->setEventCallback([this](const UIEvent& e){ this->onEvent(e); });
+
+    // Mapping Window (shared)
+    m_windowMap3D = new GuiWindow(widthOffset , 0, m_width, m_height,
+                                    m_windowMapTitle,
+                                    m_windowFrames2D->getContext(),
+                                    m_windowFrames2D->getDisplay(),
+                                    m_windowFrames2D->getConfig());
+
+    ensureWindowContext(m_windowMap3D->getDisplay(),
+                        m_windowMap3D->getSurface(),
+                        m_windowMap3D->getContext());
+
+    initializeMapPoints();
+
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    m_windowMap3D->setEventCallback([this](const UIEvent& e){ this->onEvent(e); });
+
+
+    m_uiEventManager.subscribe(EventTypes::MouseMoved,[this](const UIEvent& e){ this->onMouse(e); });
+    m_uiEventManager.subscribe(EventTypes::MousePressed,[this](const UIEvent& e){ this->onMouse(e); });
+    m_uiEventManager.subscribe(EventTypes::MouseReleased,[this](const UIEvent& e){ this->onMouse(e); });
+    m_uiEventManager.subscribe(EventTypes::MouseScrolled,[this](const UIEvent& e){ this->onMouse(e); });
+    m_uiEventManager.subscribe(EventTypes::KeyPressed,[this](const UIEvent& e){ this->onKeyboard(e); });
+    m_uiEventManager.subscribe(EventTypes::KeyReleased,[this](const UIEvent& e){ this->onKeyboard(e); });
+    m_uiEventManager.subscribe(EventTypes::WindowClose,[this](const UIEvent& e){ this->onWindow(e); });
+    m_uiEventManager.subscribe(EventTypes::WindowResize,[this](const UIEvent& e){ this->onWindow(e); });
+
+    printVersions();
+    Logger<std::string>::LogInfoIII("Viewer: All windows initialized.");
+}
+
+void Viewer::render()
+{
+    //set context and do normal rendering
+    ensureWindowContext(m_windowMap3D->getDisplay(), m_windowMap3D->getSurface(), m_windowMap3D->getContext());
+    renderFrames2D();
+    renderMap3D();
+    PollEvents();
+}
+
+void Viewer::renderFrames2D()
+{
+    //set context and do normal rendering
+
+    if(checkUpdateFramesFlag())
+    {
+        ensureWindowContext(m_windowFrames2D->getDisplay(), m_windowFrames2D->getSurface(), m_windowFrames2D->getContext());
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        m_canvasIndirectTracking->updateImage(m_canvasImage);
+        m_trackLinesGfx->updatePoints(m_matchedFeature2DLines);
+
+        //render background images
+        auto &canvasShader = m_shaders.find("canvasShader")->second;
+        canvasShader->use();
+        canvasShader->setUniform("TexSampler", 0);
+        m_canvasIndirectTracking->render();
+        glUseProgram(0);
+
+        //render tracking elements
+        if (m_trackLinesGfx->getN() > 1)
+        {
+            auto &linesShader = m_shaders.find("linesShader")->second;
+            linesShader->use();
+            linesShader->setUniform("vRGB", m_featureLinesColor);
+            m_trackLinesGfx->render();
+            glUseProgram(0);
+        }
+
+        clearUpdateFramesFlag();
+
+        m_windowFrames2D->onUpdateWindow();
+    }
+}
+
+void Viewer::renderMap3D()
+{
+
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    m_mMatrix = glm::mat4(1.0f);
+    setMatrices();
+
+    auto &basicShader = m_shaders.find("basicShader")->second;
+    basicShader->use();
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_keyFramesGfx.begin(); it != m_keyFramesGfx.end()
+         ; it++)
+    {
+        m_mMatrix = it->second->getPose();
+        setMatrices();
+        basicShader->setUniform("vRGB", m_keyFrameColor);
+        basicShader->setUniform("mvpMatrix", m_mvpMatrix);
+        it->second->render();
+    }
+
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfx.begin(); it != m_tweenFramesDirectGfx.end()
+         ; it++)
+    {
+        m_mMatrix = it->second->getPose();
+        setMatrices();
+        basicShader->setUniform("vRGB", m_tweenFrameDirectColor);
+        basicShader->setUniform("mvpMatrix", m_mvpMatrix);
+        it->second->render();
+    }
+
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesGfx.begin(); it != m_tweenFramesGfx.end()
+         ; it++)
+    {
+        m_mMatrix = it->second->getPose();
+        setMatrices();
+        basicShader->setUniform("vRGB", m_tweenFrameColor);
+        basicShader->setUniform("mvpMatrix", m_mvpMatrix);
+        it->second->render();
+    }
+
+
+    auto &pointShader = m_shaders.find("pointShader")->second;
+    pointShader->use();
+
+    //ref map points
+    if(m_mapPointsRefGfx->getN()>0)
+    {
+        m_mMatrix = glm::mat4(1.0f);
+        m_mMatrix[3].w = 1.0f;
+        setMatrices();
+        pointShader->setUniform("vRGB", m_mapPointsRefColor);
+        pointShader->setUniform("pointSize", 3.0f);
+        pointShader->setUniform("mvpMatrix", m_mvpMatrix);
+        m_mapPointsRefGfx->render();
+    }
+    //all map points
+    if(m_mapPointsGfx->getN()>0)
+    {
+        m_mMatrix = glm::mat4(1.0f);
+        m_mMatrix[3].w = 1.0f;
+        setMatrices();
+        pointShader->setUniform("vRGB", m_mapPointsColor);
+        pointShader->setUniform("pointSize", 2.0f);
+        pointShader->setUniform("mvpMatrix", m_mvpMatrix);
+        m_mapPointsGfx->render();
+    }
+
+
+
+    glUseProgram(0);
+
+    glEnable(GL_DEPTH_TEST);
+    m_windowMap3D->onUpdateWindow();
+}
+
+void Viewer::updateMapPoints()
+{
+    //make a local copy and load to buffer fetch pts addresses from map
+    if (!m_stop)
+    {
+
+        std::vector<ORB_SLAM2::MapPoint *> mapPoints = m_map->GetAllMapPoints();
+        std::vector<ORB_SLAM2::MapPoint *> mapRefPoints = m_map->GetReferenceMapPoints();
+
+        std::vector<glm::vec3> mpVec3;
+        uint32_t N = mapPoints.size();
+        mpVec3.reserve(N);
+
+        std::vector<glm::vec3> mpRefVec3;
+        uint32_t NRef = mapRefPoints.size();
+        mpRefVec3.reserve(NRef);
+
+        for (auto &mp: mapPoints)
+        {
+            if (mp == nullptr)
+                continue;
+
+            const auto& pos = mp->GetWorldPos();
+
+            //TODO: Convert directly to vec<GLFloat> here
+            mpVec3.emplace_back(pos.at<float>(0)*m_scaleFactor,
+                                -pos.at<float>(1)*m_scaleFactor,
+                                pos.at<float>(2)*m_scaleFactor);
+        }
+        for (auto &mp: mapRefPoints)
+        {
+            if (mp == nullptr)
+                continue;
+
+            const auto& pos = mp->GetWorldPos();
+
+            //TODO: Convert directly to vec<GLFloat> here
+            mpRefVec3.emplace_back(pos.at<float>(0)*m_scaleFactor,
+                                -pos.at<float>(1)*m_scaleFactor,
+                                pos.at<float>(2)*m_scaleFactor);
+        }
+
+        //TODO: have function take vec<GLFLoat> directly
+        m_mapPointsGfx->updatePoints(mpVec3);
+        m_mapPointsRefGfx->updatePoints(mpRefVec3);
+
+    }
+
+}
+
+void Viewer::updateFrames3D()
+{
+    if (!m_stop)
+    {
+        updateTweenIndirectFrames();
+        updateTweenDirectFrames();
+        updateKFrames();
+    }
+}
+
+void Viewer::updateKFrames()
+{
+    //TODO: fix connection between frames (probably uses parent?)
+    const std::vector<ORB_SLAM2::KeyFrame*> frames = m_map->GetAllKeyFrames();
+
+    uint32_t lastKeyframeID = std::numeric_limits<uint32_t>::min();
+    glm::mat4 lastKeyframePose = glm::mat4(1.0f);
+
+    //use to convert: computer vision to computer graphics!
+    glm::mat4 F(1.0f);
+    F[1][1] = -1.0f;
+
+    for (uint32_t n = 0; n < frames.size(); n++)
+    {
+        cv::Mat framePose = frames[n]->GetPoseInverse();
+
+        glm::mat4 cvPose(1.0f);
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                cvPose[j][i] = framePose.at<float>(i, j);
+
+        glm::mat4 pose = F * cvPose * F;
+        //scale
+        pose[3].x *= m_scaleFactor;
+        pose[3].y *= m_scaleFactor;
+        pose[3].z *= m_scaleFactor;
+
+
+        uint32_t id = frames[n]->mnFrameId;
+
+        //update latest kf id
+        if (id > lastKeyframeID)
+        {
+            lastKeyframeID = id;
+            lastKeyframePose = pose;
+            if (m_activeCamera->isFollowing())
+                m_activeCamera->setTarget(lastKeyframePose);
+        }
+        //if frame exists already, update pose
+        if (m_keyFramesGfx.count(id))
+        {
+            m_keyFramesGfx[id]->setPose(pose);
+        }
+        //otherwise create new
+        else
+        {
+            FrameGizmo* tempFrame = new FrameGizmo(0, pose, id);
+            tempFrame->initialize();
+
+            //if first frame (empty), there should be no parent
+            if (!m_keyFramesGfx.empty())
+            {
+                tempFrame->setParentNode(std::prev(m_keyFramesGfx.end())->second);
+            }
+            m_keyFramesGfx[frames[n]->mnFrameId] = tempFrame;
+        }
+    }
+
+    //Keyframes might be culled/deleted
+    std::set<uint32_t> activeKeyFrames;
+    for (size_t i = 0; i < frames.size(); i++)
+        activeKeyFrames.insert(frames[i]->mnFrameId);
+
+    //remove from frame gizmos frames that have been culled/removed
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_keyFramesGfx.begin(); it!=m_keyFramesGfx.end(); )
+    {
+        if (!activeKeyFrames.count(it->first))
+        {
+            delete it->second;
+            it = m_keyFramesGfx.erase(it);
+        }
+        else it++;
+    }
+
+}
+
+void Viewer::updateTweenIndirectFrames()
+{
+    const std::vector<ORB_SLAM2::Frame>& frames = m_map->GetTweenFrames();
+    glm::mat4 F(1.0f);
+    F[1][1] = -1.0f;
+    //F[2][2] = -1.0f;
+
+    for (uint32_t n = 0; n < frames.size(); n++)
+    {
+        cv::Mat framePose = frames[n].mTwc;
+
+        glm::mat4 cvPose(1.0f);
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                cvPose[j][i] = framePose.at<float>(i, j);
+
+        glm::mat4 pose = F * cvPose * F;
+        //scale
+        pose[3].x *= m_scaleFactor;
+        pose[3].y *= m_scaleFactor;
+        pose[3].z *= m_scaleFactor;
+
+        uint32_t id = frames[n].mnId;
+
+        //if frame exists already, update pose
+        if (m_tweenFramesGfx.count(id))
+        {
+            m_tweenFramesGfx[id]->setPose(pose);
+        }
+        //otherwise create new
+        else
+        {
+            FrameGizmo* tempFrame = new FrameGizmo(0, pose, id);
+            tempFrame->initialize();
+
+            //if first frame (empty), there should be no parent
+            if (!m_tweenFramesGfx.empty())
+            {
+                tempFrame->setParentNode(std::prev(m_tweenFramesGfx.end())->second);
+            }
+            m_tweenFramesGfx[frames[n].mnId] = tempFrame;
+        }
+    }
+}
+
+void Viewer::updateTweenDirectFrames()
+{
+    const std::vector<ORB_SLAM2::FrameDirect>& frames = m_map->GetDirectTweenFrames();
+    glm::mat4 F(1.0f);
+    F[1][1] = -1.0f;
+    //F[2][2] = -1.0f;
+
+    for (uint32_t n = 0; n < frames.size(); n++)
+    {
+        cv::Mat framePose = frames[n].mTwc;
+
+        glm::mat4 cvPose(1.0f);
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                cvPose[j][i] = framePose.at<float>(i, j);
+
+        glm::mat4 pose = F * cvPose * F;
+        //scale
+        pose[3].x *= m_scaleFactor;
+        pose[3].y *= m_scaleFactor;
+        pose[3].z *= m_scaleFactor;
+
+
+
+        uint32_t id = frames[n].mnId;
+
+        //if frame exists already, update pose
+        if (m_tweenFramesDirectGfx.count(id))
+        {
+            m_tweenFramesDirectGfx[id]->setPose(pose);
+        }
+        //otherwise create new
+        else
+        {
+            FrameGizmo* tempFrame = new FrameGizmo(0, pose, id);
+            tempFrame->initialize();
+
+            //if first frame (empty), there should be no parent
+            if (!m_tweenFramesDirectGfx.empty())
+            {
+                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfx.end())->second);
+            }
+            m_tweenFramesDirectGfx[frames[n].mnId] = tempFrame;
+        }
+    }
+}
+using namespace UIEvents;
+void Viewer::PollEvents()
+{
+    SDL_Event event;
+    while (SDL_PollEvent(&event))
+    {
+        switch (event.type)
+        {
+            case SDL_WINDOWEVENT:
+            {
+                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+                {
+                    int width = event.window.data1;
+                    int height = event.window.data2;
+                    WindowResizeUIEvent resizeEvent(width, height);
+                    onEvent(resizeEvent);
+                }
+                else if (event.window.event == SDL_WINDOWEVENT_CLOSE)
+                {
+                    WindowCloseUIEvent closeEvent;
+                    onEvent(closeEvent);
+                }
+                break;
+            }
+
+            case SDL_MOUSEBUTTONDOWN:
+            {
+                MouseButtonPressedUIEvent mouseEvent(event.button.button, true);
+                onEvent(mouseEvent);
+                break;
+            }
+
+            case SDL_MOUSEBUTTONUP:
+            {
+                MouseButtonReleasedUIEvent mouseEvent(event.button.button, false);
+                onEvent(mouseEvent);
+                break;
+            }
+
+            case SDL_MOUSEWHEEL:
+            {
+                MouseWheelUIEvent mouseEvent(event.wheel.y);
+                onEvent(mouseEvent);
+                break;
+            }
+
+            case SDL_MOUSEMOTION:
+            {
+                MouseMovedUIEvent mouseMoveEvent(
+                    static_cast<float>(event.motion.x),
+                    static_cast<float>(event.motion.y)
+                );
+                onEvent(mouseMoveEvent);
+                break;
+            }
+
+            case SDL_KEYDOWN:
+            {
+                KeyPressUIEvent keyPressEvent(event.key.keysym.sym, 0);
+                onEvent(keyPressEvent);
+                break;
+            }
+
+            case SDL_KEYUP:
+            {
+                KeyReleaseUIEvent keyReleaseEvent(event.key.keysym.sym, 2);
+                onEvent(keyReleaseEvent);
+                break;
+            }
+
+            case SDL_QUIT:
+            {
+                stop();
+                break;
+            }
+        }
+    }
+}
+
+
+void Viewer::updateIndirectFeatureMatches(const cv::Mat &image, const std::vector<cv::KeyPoint> &kpts1, const std::vector<cv::KeyPoint> &kpts2, const std::vector<float> &d)
+{
+    if (!m_stop)
+    {
+        m_matchedFeature2DLines.clear();
+        m_matchedFeature2DLines.reserve(2 * kpts1.size());
+
+        // Precompute scaling factors for conversion to clip space
+        static const float scaleX = 2.0f / (float) m_width;
+        static const float scaleY = 2.0f / (float) m_height;
+
+        for (uint32_t i = 0; i < kpts1.size(); i++)
+        {
+            m_matchedFeature2DLines.emplace_back((kpts1[i].pt.x * scaleX - 1.0f), (1.0f - kpts1[i].pt.y * scaleY), 0.0f);
+            m_matchedFeature2DLines.emplace_back((kpts2[i].pt.x * scaleX - 1.0f), (1.0f - kpts2[i].pt.y * scaleY), 0.0f);
+        }
+    }
+}
+
+void Viewer::printVersions()
+{
+
+    const GLubyte *renderer = glGetString(GL_RENDERER);
+    const GLubyte *vendor = glGetString(GL_VENDOR);
+    const GLubyte *version = glGetString(GL_VERSION);
+    const GLubyte *glslVersion = glGetString(GL_SHADING_LANGUAGE_VERSION);
+
+    GLint major, minor;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+
+
+    printf("GL Vendor              : %s\n", vendor);
+    printf("GL Renderer            : %s\n", renderer);
+    printf("GL Version (string)    : %s\n", version);
+    printf("GL Version (integeger) : %d.%d\n", major, minor);
+    printf("GLSL Version           : %s\n", glslVersion);
+
+
+    //query for supported extensions of the current OpenGL implementation
+    bool logExtensions = false;
+    if (logExtensions)
+
+    {
+        GLint nExtensions;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &nExtensions);
+
+        for (int i = 0; i < nExtensions; i++)
+            printf("%s\n", glGetStringi(GL_EXTENSIONS, i));
+    }
+}
+
+void Viewer::shutdown()
+{
+    stop();
+
+    //TODO: Make sure delete all allocated objects, deference pointers
+
+
+    delete m_canvasIndirectTracking;
+    delete m_canvasDirectTracking;
+
+
+    delete m_mapPointsGfx;
+
+    delete m_windowFrames2D;
+    m_canvasIndirectTracking = nullptr;
+
+
+    m_windowFrames2D->exit();
+    m_windowMap3D->exit();
+
+
+    m_windowFrames2D = nullptr;
+    m_windowMap3D = nullptr;
+    Logger<std::string>::LogInfoI("Viewer: Shutting down.");
+}
+
+void Viewer::onMouse(const UIEvent &e)
+{
+    auto& eventType = e.getType();
+
+    switch (eventType)
+    {
+        case EventTypes::MouseMoved:
+        {
+            const MouseMovedUIEvent* event = dynamic_cast<const MouseMovedUIEvent*>(&e);
+            m_activeCamera->onLook(event->getX(),event->getY());
+            break;
+        }
+        case EventTypes::MousePressed:
+        {
+            const MouseButtonPressedUIEvent* event = dynamic_cast<const MouseButtonPressedUIEvent*>(&e);
+            //m_activeCamera->setIsFree(true);
+            break;
+        }
+        case EventTypes::MouseReleased:
+        {
+            const MouseButtonReleasedUIEvent* event = dynamic_cast<const MouseButtonReleasedUIEvent*>(&e);
+            //m_activeCamera->setIsFree(false);
+            break;
+        }
+        case EventTypes::MouseScrolled:
+        {
+            const MouseWheelUIEvent* event = dynamic_cast<const MouseWheelUIEvent*>(&e);
+            m_activeCamera->onZoom(event->getWheel());
+            break;
+        }
+    }
+}
+
+void Viewer::onKeyboard(const UIEvent &e)
+{
+    auto& eventType = e.getType();
+    switch (eventType)
+    {
+        case EventTypes::KeyPressed:
+        {
+            const KeyPressUIEvent* event = dynamic_cast<const KeyPressUIEvent*>(&e);
+            m_activeCamera->onMove(event->getKey(),0);
+            break;
+        }
+        case EventTypes::KeyReleased:
+        {
+            const KeyReleaseUIEvent* event = dynamic_cast<const KeyReleaseUIEvent*>(&e);
+            int keyPRessed = event->getKey();
+
+                //spacebar
+                if (keyPRessed == 32)
+                {
+                    if (m_pauseSimulation.load())
+                    {
+                        Logger<std::string>::LogInfoI("Viewer: Un-Pausing simulation.");
+                        m_pauseSimulation.store(false);
+                        //m_slamManager->onUnPause();
+                    }
+                    else
+                    {
+                        Logger<std::string>::LogInfoI("Viewer: Pausing simulation.");
+                        m_pauseSimulation.store(true);
+                    }
+                }
+                //everything else
+                else
+                {
+                    m_activeCamera->onMove(event->getKey(),2);
+                }
+            break;
+        }
+    }
+}
+
+void Viewer::onWindow(const UIEvent &e)
+{
+    auto& eventType = e.getType();
+    switch (eventType)
+    {
+        case EventTypes::WindowClose:
+        {
+            //TODO: Implement logic to shutdown application
+            break;
+        }
+        case EventTypes::WindowResize:
+        {
+
+            //TODO: Implement resize of windows
+            break;
+        }
+    }
+
+}
+
+void Viewer::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLContext context)
+{
+    if (m_eglContext != context || m_eglSurface != surface || m_eglDisplay != display)
+    {
+        eglMakeCurrent(display, surface, surface,context);
+        m_eglContext = context;
+        m_eglSurface = surface;
+        m_eglDisplay = display;
+    }
+}
+
+void Viewer::exit()
+{
+    shutdown();
+}
+
+void Viewer::stop()
+{
+    std::lock_guard<std::mutex> lock(mMutexUpdate);
+    m_stop = true;
+}
+
+void Viewer::initializeShaders()
+{
+    GLuint shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> shaderSimpleWhite = std::make_shared<Shader>();
+    shaderSimpleWhite->setHandle(shaderProgram);
+
+    shaderSimpleWhite->compile(GL_VERTEX_SHADER, "shaders/basicShader.vert");
+    shaderSimpleWhite->compile(GL_FRAGMENT_SHADER, "shaders/basicShader.frag");
+    shaderSimpleWhite->link();
+    m_shaders["basicShader"] = shaderSimpleWhite;
+    std::cout << "basic shader loaded." << std::endl;
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> pointShader = std::make_shared<Shader>();
+    pointShader->setHandle(shaderProgram);
+    pointShader->compile(GL_VERTEX_SHADER, "shaders/pointShader.vert");
+    pointShader->compile(GL_FRAGMENT_SHADER, "shaders/pointShader.frag");
+    pointShader->link();
+    m_shaders["pointShader"] = pointShader;
+    std::cout << "pointShader shader loaded." << std::endl;
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> pointColorShader = std::make_shared<Shader>();
+    pointColorShader->setHandle(shaderProgram);
+    pointColorShader->compile(GL_VERTEX_SHADER, "shaders/pointColorShader.vert");
+    pointColorShader->compile(GL_FRAGMENT_SHADER, "shaders/pointColorShader.frag");
+    pointColorShader->link();
+    m_shaders["pointColorShader"] = pointColorShader;
+    std::cout << "pointColorShader shader loaded." << std::endl;
+
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> shaderSimpleColor = std::make_shared<Shader>();
+    shaderSimpleColor->setHandle(shaderProgram);
+    shaderSimpleColor->compile(GL_VERTEX_SHADER, "shaders/coloredVtxShader.vert");
+    shaderSimpleColor->compile(GL_FRAGMENT_SHADER, "shaders/coloredVtxShader.frag");
+    shaderSimpleColor->link();
+    m_shaders["colorVtxShader"] = shaderSimpleColor;
+    std::cout << "colored shader loaded." << std::endl;
+
+    //canvas shader
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> shaderCanvas = std::make_shared<Shader>();
+    shaderCanvas->setHandle(shaderProgram);
+    shaderCanvas->compile(GL_VERTEX_SHADER, "shaders/canvasShader.vert");
+    shaderCanvas->compile(GL_FRAGMENT_SHADER, "shaders/canvasShader.frag");
+    shaderCanvas->link();
+    m_shaders["canvasShader"] = shaderCanvas;
+    std::cout << "canvas shader loaded." << std::endl;
+
+    //lines shader
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> shaderLines = std::make_shared<Shader>();
+    shaderLines->setHandle(shaderProgram);
+    shaderLines->compile(GL_VERTEX_SHADER, "shaders/linesShader.vert");
+    shaderLines->compile(GL_FRAGMENT_SHADER, "shaders/linesShader.frag");
+    shaderLines->link();
+    m_shaders["linesShader"] = shaderLines;
+    std::cout << "lines shader loaded." << std::endl;
+
+
+
+    //compute shader
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> vtxFeature = std::make_shared<Shader>();
+    vtxFeature->setHandle(shaderProgram);
+    vtxFeature->compile(GL_COMPUTE_SHADER, "shaders/vtxFeatureShader.comp");
+    vtxFeature->link();
+    m_shaders["vtxFeatureShader"] = vtxFeature;
+    std::cout << "compute shader loaded." << std::endl;
+    Logger<std::string>::LogInfoIII("Viewer shaders initialized.");
+}
+
+void Viewer::initializeBuffers()
+{
+    glGenFramebuffers(1, &renderFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, renderFBO);
+
+    glGenRenderbuffers(1, &depthFBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, depthFBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, m_width, m_height);
+
+    GLenum drawBuffers[] = {GL_NONE};
+    glDrawBuffers(1, drawBuffers);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    Logger<std::string>::LogInfoIII("Viewer: Frame buffers initialized.");
+}
+
+void Viewer::initializeMapPoints()
+{
+    m_mapPointsGfx = new PointCloud();
+    m_mapPointsGfx->initializeEmptyBuffer();
+
+    m_mapPointsRefGfx = new PointCloud();
+    m_mapPointsRefGfx->initializeEmptyBuffer();
+
+    Logger<std::string>::LogInfoIII("Viewer: Point cloud maps initialized.");
+}
+
+void Viewer::initializeCamera()
+{
+    glm::vec3 camPos(0.0f, 0.0f, -5.0f);
+    glm::vec3 camTarget(0.0f, 0.0f, 1.0f);
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+    m_activeCamera = std::make_shared<Camera>(m_width, m_height,camPos,camTarget,up);
+
+    bool follow = m_slamViewerSettings->viewerParams.cameraFollow;
+    const float followDistance = m_slamViewerSettings->viewerParams.followDistance;
+    m_activeCamera->setFollow(follow, followDistance);
+}
+
+void Viewer::setMatrices()
+{
+    //because here we use OpenXR's matrices
+    m_vMatrix = m_activeCamera->getViewMatrix();
+    m_pMatrix = m_activeCamera->getProjectionMatrix();
+    m_mvpMatrix = m_pMatrix * m_vMatrix * m_mMatrix;
+}
+
+void Viewer::setSquareUpdateFlag(const char &state)
+{
+    std::unique_lock<std::mutex> lock(m_viewerMutex); {
+        switch (state)
+        {
+            case 1: //startup
+            {
+                break;
+            }
+            case 2: //tracking
+            {
+                break;
+            }
+            case 3: //lost
+            {
+                break;
+            }
+            case 4: //recovery
+            {
+                break;
+            }
+        }
+    }
+}
+
+bool Viewer::setActiveCamera(std::shared_ptr<Camera> camera)
+{
+    if (camera != nullptr)
+    {
+        m_activeCamera = camera;
+        return true;
+    }
+    return false;
+}
+
+void Viewer::initializeProjectionMatrix()
+{
+    m_p = glm::perspective(glm::radians(m_fov),
+                           static_cast<float>(m_width / m_height),
+                           m_near,
+                           m_far);
+
+    std::cout << "Printing m_p matrix: " << std::endl;
+
+    for (uint32_t i = 0; i < 4; i++)
+        for (uint32_t j = 0; j < 4; j++)
+            std::cout << std::to_string(m_p[j][i]) << std::endl;
+
+    m_k = glm::mat4(1.0f);
+    m_k[0][0] = 512;
+    m_k[1][1] = 512;
+    m_k[0][2] = 512;
+    m_k[1][2] = 512;
+}
+
+void ViewerUtil::convertToGL(const std::vector<glm::vec3> &points, std::vector<GLfloat> &glPoints)
+{
+    glPoints.clear();
+    for (uint32_t i = 0; i < points.size(); i++)
+    {
+        glPoints.push_back(points[i].x);
+        glPoints.push_back(points[i].y);
+        glPoints.push_back(points[i].z);
+    }
+}
+
+void ViewerUtil::convertToGL(const std::vector<glm::vec2> &points, std::vector<GLfloat> &glPoints)
+{
+    glPoints.clear();
+    for (uint32_t i = 0; i < points.size(); i++)
+    {
+        glPoints.push_back(points[i].x);
+        glPoints.push_back(points[i].y);
+    }
+}
+
+//********************************************************  SHADER ********************************************************
+
+bool Shader::link()
+{
+    if (m_isLinked)
+    {
+        std::cout << "Shader program has already been linked!" << std::endl;
+        return false;
+    }
+    if (m_shaderProgram <= 0)
+    {
+        std::cout << "Link error: Shader program has not been created!" << std::endl;
+        return false;
+    }
+
+    //atach compiled shaders
+    for (size_t iLoop = 0; iLoop < m_compiledShaders.size(); iLoop++)
+        glAttachShader(m_shaderProgram, m_compiledShaders[iLoop]);
+
+
+    //link
+    glLinkProgram(m_shaderProgram);
+
+    GLint status;
+    glGetProgramiv(m_shaderProgram, GL_LINK_STATUS, &status);
+    if (status == GL_FALSE)
+    {
+        GLint infoLogLength;
+        glGetProgramiv(m_shaderProgram, GL_INFO_LOG_LENGTH, &infoLogLength);
+
+        GLchar *strInfoLog = new GLchar[infoLogLength + 1];
+        glGetProgramInfoLog(m_shaderProgram, infoLogLength, NULL, strInfoLog);
+        fprintf(stderr, "Linker failure: %s\n", strInfoLog);
+        std::cout << strInfoLog << std::endl;
+        delete[] strInfoLog;
+        return false;
+    }
+
+    //Link successful, get uniforms and set linked
+    else
+    {
+        findUniformLocations();
+        findAttributeLocations();
+        m_isLinked = true;
+    }
+
+    //in either case, detach shader objects
+    detachAndDeleteShaders();
+
+    return true;
+}
+
+std::string Shader::readFile(const std::string &path)
+{
+    std::fstream f;
+    f.open(path, std::ios::in);
+    if (!f)
+    {
+        std::cout << "Error! File not found or could not be opened! " + path << std::endl;
+        return "";
+    } else
+    {
+        std::cout << "Shader File found: " + path << std::endl;
+    }
+
+
+    std::stringstream ss;
+    ss << f.rdbuf();
+    f.close();
+    int length = 0;
+    if (ss)
+    {
+        ss.seekg(0, ss.end);
+        length = ss.tellg();
+        ss.seekg(0, ss.beg);
+        std::string shaderSource = ss.str();
+        return shaderSource;
+    } else
+    {
+        std::string error = "Error! File not found or could not be opened!" + path;
+        return "";
+    }
+}
+
+bool Shader::compile(GLenum shaderType, const std::string &shaderSrcFile)
+{
+    std::string shaderSource;
+    GLuint shader = glCreateShader(shaderType);
+    shaderSource = readFile(shaderSrcFile);
+    const char *strFileData = shaderSource.c_str();
+
+    if ((unsigned int) m_shaderProgram <= 0)
+    {
+        m_shaderProgram = glCreateProgram();
+        if (m_shaderProgram == 0)
+        {
+            std::cout << "Unable to create shader program." << std::endl;
+        }
+        return false;
+    }
+
+    glShaderSource(shader, 1, &strFileData, NULL);
+    glCompileShader(shader);
+
+    GLint status;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    if (status == GL_FALSE)
+    {
+        GLint infoLogLength;
+        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLogLength);
+
+        GLchar *strInfoLog = new GLchar[infoLogLength + 1];
+        glGetShaderInfoLog(shader, infoLogLength, NULL, strInfoLog);
+
+        char *strShaderType;
+        switch (shaderType)
+        {
+            case GL_VERTEX_SHADER: strShaderType = "vertex";
+                break;
+            case GL_GEOMETRY_SHADER: strShaderType = "geometry";
+                break;
+            case GL_FRAGMENT_SHADER: strShaderType = "fragment";
+                break;
+            case GL_COMPUTE_SHADER: strShaderType = "compute";
+                break;
+        }
+
+        fprintf(stderr, "Compile failure in %s shader:\n%s\n", strShaderType, strInfoLog);
+        delete[] strInfoLog;
+
+        std::cout << "Compile failure in" + std::string(strShaderType) + "in shader: " + strInfoLog << std::endl;
+
+        return false;
+    }
+
+    m_compiledShaders.push_back(shader);
+    return true;
+}
+
+void Shader::detachAndDeleteShaders()
+{
+    GLint numberOfShaders = 0;
+    glGetProgramiv(m_shaderProgram, GL_ATTACHED_SHADERS, &numberOfShaders);
+    std::vector<GLuint> shaderNames(numberOfShaders);
+    glGetAttachedShaders(m_shaderProgram, numberOfShaders, NULL, shaderNames.data());
+    for (GLuint attachedShader: shaderNames)
+    {
+        glDetachShader(m_shaderProgram, attachedShader);
+        glDeleteShader(attachedShader);
+    }
+}
+
+void Shader::findUniformLocations()
+{
+    m_uniformLocations.clear();
+
+    GLint i;
+    GLint count;
+    GLint size; // size of the variable
+    GLenum type; // type of the variable (float, vec3 or mat4, etc)
+
+    const GLsizei bufSize = 64; // maximum name length
+    GLchar name[bufSize]; // variable name in GLSL
+    GLsizei length; // name length
+    glGetProgramiv(m_shaderProgram, GL_ACTIVE_UNIFORMS, &count);
+    for (i = 0; i < count; i++)
+    {
+        glGetActiveUniform(m_shaderProgram, (GLuint) i, bufSize, &length, &size, &type, name);
+
+        printf("Uniform #%d Type: %u Name: %s\n", i, type, name);
+        m_uniformLocations[name] = glGetUniformLocation(m_shaderProgram, name);
+    };
+}
+
+void Shader::findAttributeLocations()
+{
+    GLint i;
+    GLint count;
+    GLint size; // size of the variable
+    GLenum type; // type of the variable (float, vec3 or mat4, etc)
+
+    const GLsizei bufSize = 16; // maximum name length
+    GLchar name[bufSize]; // variable name in GLSL
+    GLsizei length; // name length
+    glGetProgramiv(m_shaderProgram, GL_ACTIVE_ATTRIBUTES, &count);
+    printf("Active Attributes: %d\n", count);
+
+    for (i = 0; i < count; i++)
+    {
+        glGetActiveAttrib(m_shaderProgram, (GLuint) i, bufSize, &length, &size, &type, name);
+
+        printf("Attribute #%d Type: %u Name: %s\n", i, type, name);
+        m_attributeLocations[name] = glGetAttribLocation(m_shaderProgram, name);;
+    }
+}
+
+void Shader::setUniform(const char *name, const glm::mat4 &m)
+{
+    GLint loc = getUniformLocation(name);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, &m[0][0]);
+}
+
+void Shader::setUniform(const char *name, const glm::vec3 &v)
+{
+    GLint loc = getUniformLocation(name);
+    glUniform3f(loc, v.x, v.y, v.z);
+}
+
+void Shader::setUniform(const char *name, const glm::vec2 &v)
+{
+    GLint loc = getUniformLocation(name);
+    glUniform2f(loc, v.x, v.y);
+}
+
+void Shader::setUniform(const char *name, float val)
+{
+    GLint loc = getUniformLocation(name);
+    glUniform1f(loc, val);
+}
+
+void Shader::setUniform(const char *name, int val)
+{
+    GLint loc = getUniformLocation(name);
+    glUniform1i(loc, val);
+}
+
+int Shader::getUniformLocation(const char *name)
+{
+    //traverse map
+    auto index = m_uniformLocations.find(name);
+
+    //not found, means uniform was not included
+    if (index == m_uniformLocations.end())
+    {
+        //case uniform is not present in map, include in map if uniform location is valid ( > 0)
+        GLint loc = glGetUniformLocation(m_shaderProgram, name);
+        if (loc >= 0)
+        {
+            m_uniformLocations[name] = loc;
+            return loc;
+        } else
+        {
+            std::string output = name;
+            output = "uniform: " + output + " not found!";
+            fprintf(stderr, "%s", output.c_str());
+            return -1;
+        }
+    }
+    return index->second;
+}
+
+bool Shader::setHandle(GLuint handle)
+{
+    if (handle != 0)
+    {
+        m_shaderProgram = handle;
+        return true;
+    } else
+        std::cerr << "invalid shader program!" << std::endl;
+    return false;
+}
+
+//********************************************************  CAMERA ********************************************************
+
+void Camera::update(float t)
+{
+    if (!m_follow)
+    {
+        updateMove(t);
+        setTransform();
+    }
+    else
+    {
+        follow();
+    }
+}
+
+void Camera::updateMove(float t)
+{
+    const float maxSpeed = 20.0f;
+    const float speedStep = 0.25f;
+
+    //float something = smoothStep(somevariable+=speedStep, 0, 1)*maxSpeed;
+
+    //forward backward
+    if (m_keyMap & 1)
+    {
+        if(m_motion.vForward < 0)
+        {
+            m_motion.vForward += m_motion.deacceleration;
+        }
+        m_motion.vForward += ViewerUtil::smoothStep(m_motion.iForward += speedStep, 0, maxSpeed);
+        m_motion.vForward = (m_motion.vForward > maxSpeed) ? maxSpeed : m_motion.vForward;
+    }
+    else if (m_keyMap & 2)
+    {
+        if(m_motion.vForward > 0)
+        {
+            m_motion.vForward -= m_motion.deacceleration;
+        }
+        m_motion.vForward -= ViewerUtil::smoothStep(m_motion.iForward += speedStep, 0, maxSpeed);
+        m_motion.vForward = (m_motion.vForward < -maxSpeed) ? -maxSpeed : m_motion.vForward;
+    }
+    else
+    {
+        m_motion.iForward = 0;
+
+        if (abs(m_motion.vForward) > m_motion.stopSpeed)
+        {
+            m_motion.vForward *= m_motion.deacceleration;
+        }
+        else
+            m_motion.vForward = 0.0f;
+
+    }
+
+    if (m_keyMap & 4)
+    {
+        if(m_motion.vSide < 0)
+        {
+            m_motion.vSide += m_motion.deacceleration;
+        }
+        m_motion.vSide += ViewerUtil::smoothStep(m_motion.iSide += speedStep, 0, maxSpeed);
+        m_motion.vSide = (m_motion.vSide > maxSpeed) ? maxSpeed : m_motion.vSide;
+    }
+    else if (m_keyMap & 8)
+    {
+        if(m_motion.vSide > 0)
+        {
+            m_motion.vSide -= m_motion.deacceleration;
+        }
+        m_motion.vSide -= ViewerUtil::smoothStep(m_motion.iSide += speedStep, 0, maxSpeed);
+        m_motion.vSide = (m_motion.vSide < -maxSpeed) ? -maxSpeed : m_motion.vSide;
+    }
+    else
+    {
+        m_motion.iSide = 0;
+        if (abs(m_motion.vSide) > m_motion.stopSpeed)
+        {
+            m_motion.vSide *= m_motion.deacceleration;
+        }
+        else
+            m_motion.vSide = 0.0f;
+    }
+
+
+    if(m_zoom > 0)
+    {
+        if(m_motion.vForward < 0)
+        {
+            m_motion.vForward += m_motion.deacceleration;
+        }
+        m_motion.vForward += m_motion.iZoom;
+        m_motion.vForward = (m_motion.vForward > maxSpeed) ? maxSpeed : m_motion.vForward;
+    }
+    else if(m_zoom < 0)
+    {
+        if(m_motion.vForward > 0)
+        {
+            m_motion.vForward -= m_motion.deacceleration;
+        }
+        m_motion.vForward -= m_motion.iZoom;
+        m_motion.vForward = (m_motion.vForward < -maxSpeed) ? -maxSpeed : m_motion.vForward;
+    }
+    m_zoom = 0;
+
+    m_position = m_position + (m_forward * m_stepSensitivity * m_motion.vForward * t);
+    m_position = m_position + (m_right * m_stepSensitivity * m_motion.vSide * t);
+}
+
+void Camera::setTransform()
+{
+    glm::mat4 posMat(1.0f);
+    posMat[3] = glm::vec4(m_position,1.0f);
+
+    glm::mat4 rotMat(1.0);
+    rotMat[0] = glm::vec4(m_right, 0.0f);
+    rotMat[1] = glm::vec4(m_up, 0.0f);
+    rotMat[2] = glm::vec4(-m_forward, 0.0f);
+    m_orientation[0] = glm::vec3(rotMat[0]);
+    m_orientation[1] = glm::vec3(rotMat[1]);
+    m_orientation[2] = glm::vec3(rotMat[2]);
+
+    //TODO: rename this to camW and camC or something mor coherent
+    //world space
+    glm::mat4 m_transform = posMat * rotMat;
+
+    //camera space
+    m_viewMatrix = glm::transpose(m_orientation); // Inverse rotation matrix
+    m_viewMatrix[3] = glm::vec4(-glm::transpose(m_orientation) * m_position, 1.0f);
+}
+
+void Camera::setProjectionTransform()
+{
+    m_projectionMatrix = glm::perspective(glm::radians(m_fov),static_cast<float>(m_width/m_height),m_near,m_far);
+}
+
+void Camera::initialize()
+{
+    m_projectionMatrix = glm::mat4(1.0f);
+    m_viewMatrix = glm::mat4(1.0f);
+    m_viewProjectionMatrix= glm::mat4(1.0f);
+    m_forward = glm::normalize(m_forward);
+    m_up = glm::normalize(m_up);
+    m_right = glm::cross(m_up, m_forward);
+    m_right = glm::normalize(m_right);
+    m_fov = 90;
+    m_near = 1;
+    m_far = 1000;
+
+    setProjectionTransform();
+
+    m_horAngle = -90.0f;
+    m_verAngle = 0;
+}
+
+void Camera::onMove(int key, int mode)
+{
+    switch (key)
+    {
+        case 119: //w, front
+        {
+            m_keyMap = (mode == 2) ? m_keyMap & ~(0x01) : m_keyMap = m_keyMap | 1;
+            break;
+        }
+        case 115: //s, back
+        {
+            m_keyMap = (mode == 2) ? m_keyMap & ~(0x02) : m_keyMap = m_keyMap | 2;
+            break;
+        }
+        case 100: //d, right
+        {
+            m_keyMap = (mode == 2) ? m_keyMap & ~(0x04) : m_keyMap = m_keyMap | 4;
+            break;
+        }
+        case 97: //a, left
+        {
+            m_keyMap = (mode == 2) ? m_keyMap & ~(0x08) : m_keyMap = m_keyMap | 8;
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+}
+
+void Camera::follow()
+{
+    // Extract orientation (3x3 rotation)
+    glm::mat3 R = glm::mat3(m_target);
+
+    // Extract keyframe position
+    glm::vec3 kfPos = glm::vec3(m_target[3]);
+
+    // Forward is the Z column (third column of rotation)
+    glm::vec3 forward = glm::normalize(glm::vec3(R[2]));
+
+    // Position camera behind keyframe
+    m_position = kfPos - forward * m_followDistance;
+
+    // Copy orientation vectors
+    m_right = glm::normalize(glm::vec3(R[0]));
+    m_up = glm::normalize(glm::vec3(R[1]));
+    m_forward = forward;
+
+    setTransform();
+}
+
+void Camera::onLook(int x, int y)
+{
+    if (!m_follow)
+    {
+        //temp vectors
+        glm::vec3 right(1.0f, 0.0f, 0.0f);
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        glm::vec3 target(1.0f, 0.0f, 0.0f);
+
+
+        //update mouse to current cursor pos
+        if (!m_isInitialized)
+        {
+            m_isInitialized = true;
+            m_mouseX = (float)x;
+            m_mouseY = (float)y;
+        }
+
+
+        m_dx = ((float)x - m_mouseX) * m_horSensitivity;
+        m_dy = ((float)y - m_mouseY) * m_verSensitivity;
+
+        m_mouseX = (float)x;
+        m_mouseY = (float)y;
+
+        const float alpha = 0.85f;
+
+        m_sdx = (1.0f-alpha)*m_sdx + static_cast<float>(m_dx)*alpha;
+        m_sdy = (1.0f-alpha)*m_sdy + static_cast<float>(m_dy)*alpha;
+
+        m_horAngle += m_sdx / 3.0f;
+        m_verAngle += m_sdy / 3.0f;
+
+        m_verAngle = (m_verAngle < m_maxVerAngle) ? m_maxVerAngle : m_verAngle;
+        m_verAngle = (m_verAngle > -m_maxVerAngle) ? -m_maxVerAngle : m_verAngle;
+
+        float horizontalAngleRad = glm::radians(m_horAngle);
+        float verticalAngleRad = glm::radians(m_verAngle);
+
+        glm::vec3 verticalVector(0.0f, 1.0f, 0.0f);
+        glm::vec3 viewVector(1.0f, 0.0f, 0.0f);
+
+        viewVector = ViewerUtil::rotateAngleAxis(viewVector, horizontalAngleRad, verticalVector);
+        viewVector = glm::normalize(viewVector);
+
+        glm::vec3 rightVector = glm::cross(verticalVector, viewVector);
+        rightVector = glm::normalize(rightVector);
+
+        viewVector = ViewerUtil::rotateAngleAxis(viewVector, verticalAngleRad, rightVector);
+        viewVector = glm::normalize(viewVector);
+
+        glm::vec3 upVector = glm::cross(viewVector, rightVector);
+        upVector = glm::normalize(upVector);
+
+        m_forward = viewVector;
+        m_up = upVector;
+        m_right = rightVector;
+
+        setTransform();
+    }
+    else
+    {
+        m_isInitialized = false;
+    }
+}
+
+//********************************************************  CANVAS ********************************************************
+
+void Canvas::updateImage(const cv::Mat &image)
+{
+    m_image = image.clone();
+    cv::cvtColor(m_image, m_image, cv::COLOR_BGR2RGB);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, GL_RGB, GL_UNSIGNED_BYTE, m_image.data);
+}
+
+void Canvas::render() const
+{
+    if (m_vao != 0) {
+        glDisable(GL_DEPTH_TEST);
+        glBindVertexArray(m_vao);
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR) std::cout << "VAO bind error: " << err << std::endl;
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_texture);
+        err = glGetError();
+        if (err != GL_NO_ERROR) std::cout << "Texture bind error: " << err << std::endl;
+        glDrawElements(GL_TRIANGLES, m_N, GL_UNSIGNED_INT, 0);
+        err = glGetError();
+        if (err != GL_NO_ERROR) std::cout << "Draw error: " << err << std::endl;
+        glBindVertexArray(0);
+        glEnable(GL_DEPTH_TEST);
+    }
+}
+
+void Canvas::initialize()
+{
+    std::vector<glm::vec3> points;
+    std::vector<GLfloat> glpoints;
+    std::vector<GLuint> indices;
+    std::vector<GLfloat> glTexCoords;
+
+    //quad vertices
+    points.emplace_back(-1, -1, 0); //left lower
+    points.emplace_back(-1, 1, 0); //left upper
+    points.emplace_back(1, 1, 0); //right upper
+    points.emplace_back(1, -1, 0); //right lower
+
+    //indices
+    indices = {0, 2, 1, 0, 3, 2};
+
+    //texture coordinates
+    std::vector<glm::vec2> texCoords;
+    texCoords.emplace_back(0, 1);
+    texCoords.emplace_back(0, 0);
+    texCoords.emplace_back(1, 0);
+    texCoords.emplace_back(1, 1);
+
+
+    ViewerUtil::convertToGL(points, glpoints);
+    ViewerUtil::convertToGL(texCoords, glTexCoords);
+
+    initializeBuffers(&glpoints, &indices, &glTexCoords);
+    bindTexture();
+}
+
+void Canvas::initializeBuffers(std::vector<GLfloat> *glPoints, std::vector<GLuint> *indices,std::vector<GLfloat> *texCoords)
+{
+    if (!m_buffers.empty()) deleteBuffers();
+
+    // Must have data for points, indices, texture coordinates
+    if (indices == nullptr || glPoints == nullptr || texCoords == nullptr)
+    {
+        return;
+    }
+
+    m_N = indices->size();
+
+    GLuint posBuffer = 0, indexBuffer = 0, textCoordBuffer = 0;
+
+    //index
+    glGenBuffers(1, &indexBuffer);
+    m_buffers.push_back(indexBuffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices->size() * sizeof(GLuint), indices->data(), GL_STATIC_DRAW);
+
+    //points position
+    glGenBuffers(1, &posBuffer);
+    m_buffers.push_back(posBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glBufferData(GL_ARRAY_BUFFER, glPoints->size() * sizeof(GLfloat), glPoints->data(), GL_STATIC_DRAW);
+
+    //texture coords.
+    glGenBuffers(1, &textCoordBuffer);
+    m_buffers.push_back(textCoordBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, textCoordBuffer);
+    glBufferData(GL_ARRAY_BUFFER, texCoords->size() * sizeof(GLfloat), texCoords->data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    //index
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+    // Position
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0); // Vertex position
+
+    // Tex coords
+    glBindBuffer(GL_ARRAY_BUFFER, textCoordBuffer);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(1); // Tex coord
+
+    glBindVertexArray(0);
+}
+
+void Canvas::bindTexture()
+{
+    glGenTextures(1, &m_texture);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_width, m_height, 0,GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+void Canvas::deleteBuffers()
+{
+    if (m_buffers.size() > 0)
+    {
+        glDeleteBuffers((GLsizei) m_buffers.size(), m_buffers.data());
+        m_buffers.clear();
+    }
+
+    if (m_vao != 0)
+    {
+        glDeleteVertexArrays(1, &m_vao);
+        m_vao = 0;
+    }
+}
+
+//********************************************************  GL ELEMENTS ********************************************************
+
+void GraphicPrimitive::initialize()
+{
+}
+
+void GraphicPrimitive::loadPoints(const std::vector<glm::vec3> &points, const std::vector<glm::vec3> &pointsColor)
+{
+    std::vector<GLfloat> glPoints;
+    std::vector<GLfloat> glPointsColor;
+
+    ViewerUtil::convertToGL(points, glPoints);
+    ViewerUtil::convertToGL(pointsColor, glPointsColor);
+    initializeBuffers(&glPoints, &glPointsColor);
+}
+
+void GraphicPrimitive::loadPoints(const std::vector<glm::vec3> &points)
+{
+    std::vector<GLfloat> glPoints;
+    ViewerUtil::convertToGL(points, glPoints);
+    initializeBuffers(&glPoints);
+}
+
+void GraphicPrimitive::initializeBuffers(std::vector<GLfloat> *glPoints, std::vector<GLfloat> *glpointsColors)
+{
+    if (glPoints == nullptr || glpointsColors == nullptr)
+        return;
+
+    GLuint posBuffer = 0, colorBuffer = 0;
+    int vtxPosAttributeIndex = 0;
+    int vtxColorAttributeIndex = 1;
+    m_N = glPoints->size();
+
+
+    glGenBuffers(1, &posBuffer);
+    m_buffers.push_back(posBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glBufferData(GL_ARRAY_BUFFER, glPoints->size() * sizeof(GLfloat), glPoints->data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &colorBuffer);
+    m_buffers.push_back(colorBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffer);
+    glBufferData(GL_ARRAY_BUFFER, glpointsColors->size() * sizeof(GLfloat), glpointsColors->data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glVertexAttribPointer(vtxPosAttributeIndex, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(vtxPosAttributeIndex); // Vertex position
+
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffer);
+    glVertexAttribPointer(vtxColorAttributeIndex, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(vtxColorAttributeIndex);
+
+    glBindVertexArray(0);
+}
+
+void GraphicPrimitive::initializeBuffers(std::vector<GLfloat> *glPoints)
+{
+    if (glPoints == nullptr)
+        return;
+
+    GLuint posBuffer = 0, colorBuffer = 0;
+    m_N = glPoints->size() / 3;
+
+    glGenBuffers(1, &posBuffer);
+    m_buffers.push_back(posBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glBufferData(GL_ARRAY_BUFFER, glPoints->size() * sizeof(GLfloat), glPoints->data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0); // Vertex position
+
+    glBindVertexArray(0);
+}
+
+void GraphicPrimitive::render() const
+{
+    if (m_vao != 0)
+    {
+        glBindVertexArray(m_vao);
+        glDrawArrays(GL_LINES, 0, m_N);
+        glBindVertexArray(0);
+    }
+}
+
+void GraphicPrimitive::deleteBuffers()
+{
+    if (m_buffers.size() > 0)
+    {
+        glDeleteBuffers((GLsizei) m_buffers.size(), m_buffers.data());
+        m_buffers.clear();
+    }
+
+    if (m_vao != 0)
+    {
+        glDeleteVertexArrays(1, &m_vao);
+        m_vao = 0;
+    }
+}
+
+void GraphicPrimitive::updateBuffer(const std::vector<GLfloat> *glPoints)
+{
+    if ((!glPoints) || (glPoints->size() <3))
+        return;
+
+    m_N = (int)(glPoints->size()/3);
+    glBindVertexArray(m_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_buffers[0]);
+    //orphan old storage (will clear and create a new one so doesnt stall cpu)
+    glBufferData(GL_ARRAY_BUFFER, glPoints->size() * sizeof(GLfloat), nullptr, GL_STREAM_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, glPoints->size()*sizeof(GLfloat), glPoints->data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+void GraphicPrimitive::updateBuffer(const std::vector<GLfloat> *glPoints,const std::vector<GLfloat> *glpointsColors)
+{
+    if ((!glPoints) || (!glpointsColors)) return;
+    if ((glPoints->size() < 3) || (glpointsColors->size() < 3)) return;
+
+    m_N = (int)(glPoints->size()/3);
+    glBindBuffer(GL_ARRAY_BUFFER, m_buffers[0]);
+    glBufferData(GL_ARRAY_BUFFER, glPoints->size() * sizeof(GLfloat), nullptr, GL_STREAM_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, glPoints->size() * sizeof(GLfloat), glPoints->data(), GL_DYNAMIC_DRAW);
+
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_buffers[1]);
+    glBufferData(GL_ARRAY_BUFFER, glpointsColors->size() * sizeof(GLfloat), nullptr, GL_STREAM_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, glpointsColors->size() * sizeof(GLfloat), glpointsColors->data(), GL_DYNAMIC_DRAW);
+
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+
+void GraphicPrimitive::initializeEmptyBuffer()
+{
+    // Generate VAO
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    // Generate VBO
+    glGenBuffers(1, &m_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+
+
+    // Initialize VBO with an empty buffer
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_STATIC_DRAW);
+
+    // Set up vertex attributes (if needed)
+    // For example, assuming points are 3D coordinates stored as floats:
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3, nullptr);
+    glEnableVertexAttribArray(0);
+
+    // Unbind VAO and VBO
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    m_buffers.push_back(m_vbo);
+}
+
+void GraphicPrimitive::initializeBuffers(const std::vector<GLfloat> *points, const std::vector<GLuint> *indices)
+{
+    if (!m_buffers.empty()) deleteBuffers();
+
+    m_N = points->size() / 2;
+    int vtxAttributeIndex = 0;
+
+
+    // Must have data for indices, points
+    if (indices == nullptr || points == nullptr)
+    {
+        return;
+    }
+
+
+    GLuint indexBuf = 0, posBuf = 0, normBuf = 0, tcBuf = 0, tangentBuf = 0, vertexColorsBuf = 0;
+    glGenBuffers(1, &indexBuf);
+    m_buffers.push_back(indexBuf);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuf);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices->size() * sizeof(GLuint), indices->data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &posBuf);
+    m_buffers.push_back(posBuf);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuf);
+    glBufferData(GL_ARRAY_BUFFER, points->size() * sizeof(GLfloat), points->data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuf);
+
+    // Position
+    glBindBuffer(GL_ARRAY_BUFFER, posBuf);
+    glVertexAttribPointer(vtxAttributeIndex, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(vtxAttributeIndex); // Vertex position
+    vtxAttributeIndex++;
+
+    glBindVertexArray(0);
+}
+
+void AxisGizmo::initialize()
+{
+    std::vector<glm::vec3> points;
+    points.push_back(glm::vec3(0, 0, 0));
+    points.push_back(glm::vec3(-1, 0, 0));
+
+    points.push_back(glm::vec3(0, 0, 0));
+    points.push_back(glm::vec3(0, 1, 0));
+
+    points.push_back(glm::vec3(0, 0, 0));
+    points.push_back(glm::vec3(0, 0, 1));
+
+    std::vector<glm::vec3> pointsColors;
+    pointsColors.push_back(glm::vec3(1, 0, 0));
+    pointsColors.push_back(glm::vec3(1, 0, 0));
+
+    pointsColors.push_back(glm::vec3(0, 1, 0));
+    pointsColors.push_back(glm::vec3(0, 1, 0));
+
+    pointsColors.push_back(glm::vec3(0, 0, 1));
+    pointsColors.push_back(glm::vec3(0, 0, 1));
+    loadPoints(points, pointsColors);
+}
+
+void FrameGizmo::initialize()
+{
+    //update position and rotation matrix
+    m_R[0] = m_pose[0];
+    m_R[1] = m_pose[1];
+    m_R[2] = m_pose[2];
+    m_t = m_pose[3];
+
+
+    std::vector<glm::vec3> points;
+    //top
+    points.push_back(glm::vec3(-0.5, 0.5, 0.5));
+    points.push_back(glm::vec3(0.5, 0.5, 0.5));
+
+    //right
+    points.push_back(glm::vec3(0.5, 0.5, 0.5));
+    points.push_back(glm::vec3(0.5, -0.5, 0.5));
+
+    //bottom
+    points.push_back(glm::vec3(0.5, -0.5, 0.5));
+    points.push_back(glm::vec3(-0.5, -0.5, 0.5));
+
+    //left
+    points.push_back(glm::vec3(-0.5, -0.5, 0.5));
+    points.push_back(glm::vec3(-0.5, 0.5, 0.5));
+
+    //center
+    points.push_back(glm::vec3(0.0, 0.0, 0.0));
+    points.push_back(glm::vec3(-0.5, 0.5, 0.5));
+
+    points.push_back(glm::vec3(0.0, 0.0, 0.0));
+    points.push_back(glm::vec3(0.5, 0.5, 0.5));
+
+    points.push_back(glm::vec3(0.0, 0.0, 0.0));
+    points.push_back(glm::vec3(0.5, -0.5, 0.5));
+
+    points.push_back(glm::vec3(0.0, 0.0, 0.0));
+    points.push_back(glm::vec3(-0.5, -0.5, 0.5));
+
+
+    loadPoints(points);
+}
+
+void FrameGizmo::setParentNode(FrameGizmo *frameGizmo)
+{
+    m_parent = frameGizmo;
+}
+
+void FrameGizmo::renderAxisGizmos() const
+{
+    m_axisGizmo.render();
+}
+
+void PathGizmo::updatePoints(const std::vector<glm::vec3> &points)
+{
+    m_N = points.size();
+    std::vector<GLfloat> glPoints;
+    ViewerUtil::convertToGL(points, glPoints);
+    updateBuffer(&glPoints);
+}
+
+void PathGizmo::render() const
+{
+    GraphicPrimitive::render();
+}
+
+void Lines2D::updatePoints(const std::vector<glm::vec3> &points)
+{
+    m_N = points.size();
+    std::vector<GLfloat> glPoints;
+    ViewerUtil::convertToGL(points, glPoints);
+    updateBuffer(&glPoints);
+}
+
+void Lines2D::render() const
+{
+    GraphicPrimitive::render();
+}
+
+void TrailGizmo::render() const
+{
+    if (m_vao == 0) return;
+
+    glBindVertexArray(m_vao);
+    glDrawArrays(GL_POINTS, 0, m_N);
+    glBindVertexArray(0);
+}
+
+void PointCloud::render() const
+{
+    if (m_vao == 0) return;
+
+    glBindVertexArray(m_vao);
+    glDrawArrays(GL_POINTS, 0, m_N);
+    glBindVertexArray(0);
+}
+
+void PointCloud::initializeEmptyBuffer()
+{
+    // Generate VAO
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    // Generate VBO for positions
+    GLuint posBuffer;
+    glGenBuffers(1, &posBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_STATIC_DRAW); // Empty buffer for positions
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr); // Attribute 0: positions
+    glEnableVertexAttribArray(0);
+
+    // Generate VBO for colors
+    GLuint colorBuffer;
+    glGenBuffers(1, &colorBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffer);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_STATIC_DRAW); // Empty buffer for colors
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, nullptr); // Attribute 1: colors
+    glEnableVertexAttribArray(1);
+
+    // Unbind VAO and buffers
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    // Store the buffer IDs
+    m_buffers.push_back(posBuffer);
+    m_buffers.push_back(colorBuffer);
+}
+
+//TODO: use single conversion for points and frames etc.
+void PointCloud::updatePoints(const std::vector<glm::vec3> &points)
+{
+    std::vector<GLfloat> glPoints;
+    ViewerUtil::convertToGL(points, glPoints);
+    updateBuffer(&glPoints);
+}
+
+void PointCloud::updatePoints(const std::vector<glm::vec3> &points,const std::vector<glm::vec3> &pointsColor)
+{
+    std::vector<GLfloat> glPoints;
+    std::vector<GLfloat> glpointsColors;
+
+    ViewerUtil::convertToGL(points, glPoints);
+    ViewerUtil::convertToGL(pointsColor, glpointsColors);
+    updateBuffer(&glPoints,&glpointsColors);
+}
+
+GuiWindow::GuiWindow() : m_width(800), m_height(600), m_title("ImageSLAM")
+{
+    Logger<std::string>::LogInfoIV("\n Viewer: Creating window:" + m_title);
+    initializeWindow(EGL_NO_CONTEXT);
+}
+
+GuiWindow::GuiWindow(int x, int y, int width, int height, const std::string &title) : m_xOffset(x), m_yOffset(y), m_width(width), m_height(height), m_title(title)
+{
+    Logger<std::string>::LogInfoIV("\n Viewer: Creating window:" + m_title);
+    initializeWindow(EGL_NO_CONTEXT);
+}
+
+//Share resources between windows
+GuiWindow::GuiWindow(int x, int y, int width, int height, const std::string &title, EGLContext otherContext, EGLDisplay otherDisplay, EGLConfig otherConfig)
+    : m_xOffset(x), m_yOffset(y), m_width(width),m_height(height), m_title(title)
+{
+    Logger<std::string>::LogInfoIV("\n Viewer: Creating window:" + m_title);
+    initializeWindowShared(otherContext, otherDisplay, otherConfig);
+}
+
+GuiWindow::~GuiWindow()
+{
+}
+
+GuiWindow *GuiWindow::createWindow()
+{
+    return new GuiWindow();
+}
+
+GuiWindow *GuiWindow::createWindow(int x, int y, int width, int height, const std::string &title)
+{
+    return new GuiWindow(x, y, width, height, title);
+}
+
+//Share resources
+GuiWindow *GuiWindow::createWindow(int x, int y, int width, int height, const std::string &title, EGLContext otherContext, EGLDisplay otherDisplay, EGLConfig otherConfig)
+{
+    return new GuiWindow(x, y, width, height, title, otherContext, otherDisplay, otherConfig);
+}
+
+bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay sharedDisplay, EGLConfig sharedConfig)
+{
+    const EGLint configAttribs[] =
+    {
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_NONE
+    };
+
+    EGLint contextAttribs[] =
+    {
+        EGL_CONTEXT_CLIENT_VERSION, 3,
+        EGL_NONE
+    };
+
+
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    {
+        Logger<std::string>::LogError("Unable to initialize SDL: " + std::string(SDL_GetError()));
+        return false;
+    } else
+    {
+        Logger<std::string>::LogInfoI("Initialized SDL" + std::string(SDL_GetError()));
+    }
+
+    int displayIndex = 0;
+    SDL_Rect displayBounds;
+    if (SDL_GetDisplayBounds(displayIndex, &displayBounds) < 0)
+    {
+        Logger<std::string>::LogError("Failed to get display bounds");
+    }
+
+    m_window = SDL_CreateWindow(m_title.c_str(), displayBounds.x + m_xOffset, displayBounds.y + m_yOffset,
+                                m_width, m_height, SDL_WINDOW_OPENGL);
+    if (m_window == NULL)
+    {
+        Logger<std::string>::LogError("Unable to create window SDL: " + std::string(SDL_GetError()));
+        SDL_Quit();
+        return false;
+    } else
+    {
+        Logger<std::string>::LogInfoI("Created window SDL" + std::string(SDL_GetError()));
+    }
+
+
+    // ------------------------------------------------------------
+    // Use the main window’s EGLDisplay and EGLConfig
+    // ------------------------------------------------------------
+    if (sharedDisplay != EGL_NO_DISPLAY)
+        m_eglDisplay = sharedDisplay;
+    else
+        m_eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+
+    if (sharedConfig)
+        m_eglConfig = sharedConfig;
+    else {
+        EGLint numConfigs;
+        if (!eglChooseConfig(m_eglDisplay, configAttribs, &m_eglConfig, 1, &numConfigs))
+        {
+            EGLint error = eglGetError();
+            const char *errorMessage = eglGetErrorString(error);
+            Logger<std::string>::LogError("Failed to choose EGL config" + std::string(errorMessage));
+            SDL_DestroyWindow(m_window);
+            SDL_Quit();
+            return false;
+        }
+    }
+
+
+    SDL_SysWMinfo sysInfo;
+    SDL_VERSION(&sysInfo.version);
+    SDL_GetWindowWMInfo(m_window, &sysInfo);
+
+    // ------------------------------------------------------------
+    // Create a new context sharing with the main one
+    // ------------------------------------------------------------
+    m_eglContext = eglCreateContext(m_eglDisplay, m_eglConfig, sharedContext, contextAttribs);
+    if (m_eglContext == EGL_NO_CONTEXT)
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to create shared EGL context" + std::string(errorMessage));
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("Shared EGL context created ok " + std::string(errorMessage));
+    }
+
+    // ------------------------------------------------------------
+    // Create window surface using the same display/config
+    // ------------------------------------------------------------
+    m_eglSurface = eglCreateWindowSurface(m_eglDisplay, m_eglConfig,
+                                          (EGLNativeWindowType) sysInfo.info.x11.window, NULL);
+    if (m_eglSurface == EGL_NO_SURFACE)
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to create EGL window surface" + std::string(errorMessage));
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL window surface created ok " + std::string(errorMessage));
+    }
+
+    if (!eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext))
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to make shared EGL current" + std::string(errorMessage));
+        eglDestroySurface(m_eglDisplay, m_eglSurface);
+        eglDestroyContext(m_eglDisplay, m_eglContext);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("Shared EGL made current ok " + std::string(errorMessage));
+    }
+
+    eglSwapInterval(m_eglDisplay, 1);
+
+    if (!gladLoadGLES2Loader((GLADloadproc) eglGetProcAddress))
+    {
+        Logger<std::string>::LogError("Failed to initialize GLAD");
+    }
+
+    setUICallBacks();
+
+    return true;
+}
+
+bool GuiWindow::initializeWindow(EGLContext sharedContext)
+{
+    const EGLint configAttribs[] =
+    {
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_NONE
+    };
+
+    EGLint contextAttribs[] =
+    {
+        EGL_CONTEXT_CLIENT_VERSION, 3,
+        EGL_NONE
+    };
+
+
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    {
+        Logger<std::string>::LogError("Unable to initialize SDL: " + std::string(SDL_GetError()));
+        return false;
+    } else
+    {
+        Logger<std::string>::LogInfoI("Initialized SDL" + std::string(SDL_GetError()));
+    }
+
+    int displayIndex = 0;
+    SDL_Rect displayBounds;
+    if (SDL_GetDisplayBounds(displayIndex, &displayBounds) < 0)
+    {
+        Logger<std::string>::LogError("Failed to get display bounds");
+    }
+
+    m_window = SDL_CreateWindow(m_title.c_str(), displayBounds.x + m_xOffset, displayBounds.y + m_yOffset, m_width,m_height, SDL_WINDOW_OPENGL);
+    if (m_window == NULL)
+    {
+        Logger<std::string>::LogError("Unable to create window SDL: " + std::string(SDL_GetError()));
+        SDL_Quit();
+        return false;
+    } else
+    {
+        Logger<std::string>::LogInfoI("Created window SDL" + std::string(SDL_GetError()));
+    }
+
+
+    m_eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (m_eglDisplay == EGL_NO_DISPLAY)
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to get EGL display" + std::string(errorMessage));
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL display ok " + std::string(errorMessage));
+    }
+
+    if (!eglInitialize(m_eglDisplay, NULL, NULL))
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to initialize EGL" + std::string(errorMessage));
+        eglTerminate(m_eglDisplay);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL initialized ok " + std::string(errorMessage));
+    }
+
+
+    EGLint numConfigs;
+    if (!eglChooseConfig(m_eglDisplay, configAttribs, &m_eglConfig, 1, &numConfigs))
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to choose EGL config" + std::string(errorMessage));
+        eglTerminate(m_eglDisplay);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit;
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL config chosen ok " + std::string(errorMessage));
+    }
+
+
+    SDL_SysWMinfo sysInfo;
+    SDL_VERSION(&sysInfo.version); // Set SDL version
+    SDL_GetWindowWMInfo(m_window, &sysInfo);
+
+
+    m_eglContext = eglCreateContext(m_eglDisplay, m_eglConfig, sharedContext, contextAttribs);
+    if (m_eglContext == EGL_NO_CONTEXT)
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to create EGL context" + std::string(errorMessage));
+        eglTerminate(m_eglDisplay);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL context created ok " + std::string(errorMessage));
+    }
+    m_eglSurface = eglCreateWindowSurface(m_eglDisplay, m_eglConfig, (EGLNativeWindowType) sysInfo.info.x11.window,
+                                          NULL);
+    //m_eglSurface = eglCreateWindowSurface(m_eglDisplay, m_eglConfig,reinterpret_cast<EGLNativeWindowType>(m_window), NULL);
+    if (m_eglSurface == EGL_NO_SURFACE)
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to create EGL window surface" + std::string(errorMessage));
+        eglTerminate(m_eglDisplay);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL window surface created ok " + std::string(errorMessage));
+    }
+
+    if (!eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext))
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogError("Failed to make EGL current" + std::string(errorMessage));
+        eglDestroySurface(m_eglDisplay, m_eglSurface);
+        eglDestroyContext(m_eglDisplay, m_eglContext);
+        eglTerminate(m_eglDisplay);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        return false;
+    } else
+    {
+        EGLint error = eglGetError();
+        const char *errorMessage = eglGetErrorString(error);
+        Logger<std::string>::LogInfoI("EGL made current ok " + std::string(errorMessage));
+    }
+
+    eglSwapInterval(m_eglDisplay, 1);
+
+    if (!gladLoadGLES2Loader((GLADloadproc) eglGetProcAddress))
+    {
+        Logger<std::string>::LogError("Failed to initialize GLAD");
+    }
+
+    setUICallBacks();
+
+
+
+    return true;
+}
+
+void GuiWindow::setUICallBacks()
+{
+    //if using EGL + SDL
+#ifndef USE_EGL_SDL
+    //else using GLFW
+	glfwSetMouseButtonCallback(m_windowGLFW, [](GLFWwindow* window, int button, int action, int mods)
+	{
+			WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+			MouseButtonPressedUIEvent event((float)0, (float)0);
+			data.eventCallBack(event);
+	
+	});
+	
+	
+	glfwSetCursorPosCallback(m_windowGLFW, [](GLFWwindow* window, double xPos, double yPos)
+	{
+
+		WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+
+		MouseMovedUIEvent event((float)xPos, (float)yPos);
+		data.eventCallBack(event);
+		
+		
+		//// (1) ALWAYS forward mouse data to ImGui! This is automatic with default backends. With your own backend:
+		//ImGuiIO& io = ImGui::GetIO();
+		////io.AddMouseButtonEvent(button, down);
+		//io.AddMousePosEvent(xPos, yPos);
+
+		//// (2) ONLY forward mouse data to your underlying app/game.
+		//if (!io.WantCaptureMouse)
+		//{
+		//	WindowData& data = *(WindowData*)glfwGetWindowUserPointer(GuiWindow);
+
+		//	MouseMovedUIEvent event((float)xPos, (float)yPos);
+		//	data.eventCallBackFunction(event);
+		//}
+
+	});
+	
+	glfwSetWindowSizeCallback(m_windowGLFW, [](GLFWwindow* window, int width, int height)
+	{
+		WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+
+		WindowResizeUIEvent event(width, height);
+		data.eventCallBack(event);
+	});
+
+	glfwSetWindowCloseCallback(m_windowGLFW, [](GLFWwindow* window)
+	{
+		WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+		WindowCloseUIEvent event;
+		data.eventCallBack(event);
+	});
+
+	glfwSetKeyCallback(m_windowGLFW, [](GLFWwindow* window, int key, int scancode, int action, int mods)
+	{
+		WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+
+		switch (action)
+		{
+			case GLFW_PRESS:
+			{
+				KeyPressUIEvent event(key,0);
+				data.eventCallBack(event);
+				break;
+			}
+			case GLFW_RELEASE:
+			{
+				KeyReleaseUIEvent event(key,2);
+				data.eventCallBack(event);
+				break;
+			}
+			case GLFW_REPEAT:
+			{
+				KeyPressUIEvent event(key, 1);
+				data.eventCallBack(event);
+				break;
+			}
+		}
+	});
+
+	//glfwSetCharCallback(m_windowGLFW, [](GLFWwindow* GuiWindow, unsigned int keycode)
+	//{
+	//	WindowData& data = *(WindowData*)glfwGetWindowUserPointer(GuiWindow);
+
+	//	KeyTypedEvent event(keycode);
+	//	data.eventCallback(event);
+	//});
+
+	//glfwSetMouseButtonCallback(m_windowGLFW, [](GLFWwindow* GuiWindow, int button, int action, int mods)
+	//{
+	//	WindowData& data = *(WindowData*)glfwGetWindowUserPointer(GuiWindow);
+
+	//	switch (action)
+	//	{
+	//	case GLFW_PRESS:
+	//	{
+	//		MouseButtonPressedEvent event(button);
+	//		data.EventCallback(event);
+	//		break;
+	//	}
+	//	case GLFW_RELEASE:
+	//	{
+	//		MouseButtonReleasedEvent event(button);
+	//		data.EventCallback(event);
+	//		break;
+	//	}
+	//	}
+	//});
+
+	//glfwSetScrollCallback(m_windowGLFW, [](GLFWwindow* GuiWindow, double xOffset, double yOffset)
+	//{
+	//	WindowData& data = *(WindowData*)glfwGetWindowUserPointer(GuiWindow);
+
+	//	MouseScrolledEvent event((float)xOffset, (float)yOffset);
+	//	data.EventCallback(event);
+	//});
+#endif
+}
+
+void GuiWindow::onUpdateWindow()
+{
+#ifdef USE_EGL_SDL
+    eglSwapBuffers(m_eglDisplay, m_eglSurface);
+#else
+	glfwSwapBuffers(m_windowGLFW);
+#endif
+}
+
+
+void GuiWindow::printVersions()
+{
+    const GLubyte *renderer = glGetString(GL_RENDERER);
+    const GLubyte *vendor = glGetString(GL_VENDOR);
+    const GLubyte *version = glGetString(GL_VERSION);
+    const GLubyte *glslVersion = glGetString(GL_SHADING_LANGUAGE_VERSION);
+
+    GLint major, minor;
+#ifdef GL_MAJOR_VERSION
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+#else
+    // Parse version string for OpenGL ES 2.0
+if (version) {
+    sscanf(reinterpret_cast<const char *>(version), "OpenGL ES %d.%d", &major, &minor);
+}
+#endif
+
+    printf("\n");
+    printf("GL Vendor              : %s\n", vendor);
+    printf("GL Renderer            : %s\n", renderer);
+    printf("GL Version (string)    : %s\n", version);
+    printf("GL Version (integer) : %d.%d\n", major, minor);
+    printf("GLSL Version           : %s\n", glslVersion);
+
+
+    //query for supported extensions of the current OpenGL implementation
+    bool logExtensions = false;
+    if (logExtensions)
+
+    {
+        GLint nExtensions = 0;
+#ifdef GL_NUM_EXTENSIONS
+        glGetIntegerv(GL_NUM_EXTENSIONS, &nExtensions);
+        for (int i = 0; i < nExtensions; i++)
+        {
+            printf("%s\n", glGetStringi(GL_EXTENSIONS, i));
+        }
+#else
+        const char *extensions = reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS));
+    if (extensions) {
+        printf("%s\n", extensions);
+    }
+#endif
+    }
+
+    printf("\n");
+}
+
+void GuiWindow::exit()
+{
+    cleanup();
+}
+
+void GuiWindow::cleanup()
+{
+#ifdef USE_EGL_SDL
+    if (m_eglDisplay != EGL_NO_DISPLAY)
+    {
+        eglMakeCurrent(m_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (m_eglContext != EGL_NO_CONTEXT)
+        {
+            eglDestroyContext(m_eglDisplay, m_eglContext);
+            m_eglContext = EGL_NO_CONTEXT;
+        }
+        if (m_eglSurface != EGL_NO_SURFACE)
+        {
+            eglDestroySurface(m_eglDisplay, m_eglSurface);
+            m_eglSurface = EGL_NO_SURFACE;
+        }
+        eglTerminate(m_eglDisplay);
+        m_eglDisplay = EGL_NO_DISPLAY;
+    }
+
+    if (m_window != nullptr)
+    {
+        SDL_DestroyWindow(m_window);
+        m_window = nullptr;
+        SDL_Quit();
+    }
+#else
+    if(m_windowGLFW != NULL)
+		glfwDestroyWindow(m_windowGLFW);
+    glfwTerminate();
+#endif
+}
