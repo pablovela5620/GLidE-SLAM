@@ -533,17 +533,15 @@ bool System::ReadConfigFile(const std::string &path, SlamSettings *slamSettings)
     slamSettings->viewerParams.runViewer = fs["Viewer.runViewer"];
     slamSettings->viewerParams.width = fs["Viewer.width"];
     slamSettings->viewerParams.height = fs["Viewer.height"];
-    slamSettings->viewerParams.windowIndTrackTitle = static_cast<std::string>(fs["Viewer.windowIndTrackTitle"]);
-    slamSettings->viewerParams.windowDirTrackTitle = static_cast<std::string>(fs["Viewer.windowDirTrackTitle"]);
+    slamSettings->viewerParams.windowFramesTitle = static_cast<std::string>(fs["Viewer.windowFramesTitle"]);
     slamSettings->viewerParams.windowMapTitle = static_cast<std::string>(fs["Viewer.windowMapTitle"]);
-    slamSettings->viewerParams.windowSegmentTitle = static_cast<std::string>(fs["Viewer.windowSegmentTitle"]);
-    slamSettings->viewerParams.windowMeshTitle = static_cast<std::string>(fs["Viewer.windowMeshTitle"]);
     slamSettings->viewerParams.scaleFactor = fs["Viewer.scaleFactor"];
     slamSettings->viewerParams.camMoveFactor = fs["Viewer.mouseMoveFactor"];
     slamSettings->viewerParams.cameraFollow = fs["Viewer.cameraFollow"];
     slamSettings->viewerParams.followDistance = fs["Viewer.followDistance"];
 
-    slamSettings->viewerParams.keyFrameColor = readInVector(fs, "Viewer.keyFrameColor");
+    slamSettings->viewerParams.currentKeyFrameColor = readInVector(fs, "Viewer.currentKeyFrameColor");
+    slamSettings->viewerParams.allKeyFrameColor = readInVector(fs, "Viewer.allKeyFrameColor");
     slamSettings->viewerParams.tweenFrameDirectColor = readInVector(fs, "Viewer.tweenFrameDirectColor");
     slamSettings->viewerParams.tweenFrameColor = readInVector(fs, "Viewer.tweenFrameColor");
     slamSettings->viewerParams.mapPointsColor = readInVector(fs, "Viewer.mapPointsColor");

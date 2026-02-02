@@ -55,3 +55,5 @@ Examples/ROS/**/build/
 Evaluations/
 FrameTrajectory.txt
 KeyFrameTrajectory.txt
+dFrames.txt
+indFrames.txt

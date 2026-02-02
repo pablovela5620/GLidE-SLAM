@@ -11,18 +11,16 @@ Viewer.scaleFactor: 1
 Viewer.cameraFollow: 1
 Viewer.followDistance: 10
 
-Viewer.keyFrameColor: [0.0,0.0,1.0]
+Viewer.currentKeyFrameColor: [0.0,1.0,0.0]
+Viewer.allKeyFrameColor: [ 0.0,0.0,1.0]
 Viewer.tweenFrameDirectColor: [1.0,0.0,1.0]
 Viewer.tweenFrameColor: [0.0,1.0,1.0]
 Viewer.mapPointsColor: [0.0,0.0,0.0]
 Viewer.mapPointsRefColor: [1.0,0.0,0.0]
 Viewer.featureLinesColor: [0.0,1.0,0.0]
 
-Viewer.windowIndTrackTitle: Indirect Tracking
-Viewer.windowDirTrackTitle: Direct Tracking
-Viewer.windowMapTitle: Mapping
-Viewer.windowSegmentTitle: Segmentation
-Viewer.windowMeshTitle: Mesh
+Viewer.windowFramesTitle: GLidE-SLAM Frames 2D
+Viewer.windowMapTitle: GLidE-SLAM 3D Map
 Viewer.mouseMoveFactor: 1
 Viewer.fov: 90
 Viewer.far: 1000

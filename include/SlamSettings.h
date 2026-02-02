@@ -37,14 +37,12 @@ struct SlamSettings
     	float camMoveFactor{1.0f};
 
     	float featuresMaxDepth{10.0f};
-    	std::string windowIndTrackTitle {"GLidE-SLAM: Indirect Tracking"};
-    	std::string windowDirTrackTitle {"GLidE-SLAM: Direct Tracking"};
-    	std::string windowMapTitle {"GLidE-SLAM: Mapping"};
-    	std::string windowSegmentTitle {"GLidE-SLAM: Segmentation"};
-    	std::string windowMeshTitle {"GLidE-SLAM: Mesh"};
+    	std::string windowFramesTitle {"GLidE-SLAM: 2D Frames"};
+    	std::string windowMapTitle {"GLidE-SLAM: 3D Map"};
 
     	//gl elements default color set to black
-    	glm::vec3 keyFrameColor						{ 0.0f,0.0f,0.0f };
+    	glm::vec3 currentKeyFrameColor				{ 0.0f,0.0f,0.0f };
+    	glm::vec3 allKeyFrameColor					{ 0.0f,0.0f,0.0f };
     	glm::vec3 tweenFrameDirectColor				{ 0.0f,0.0f,0.0f };
     	glm::vec3 tweenFrameColor					{ 0.0f,0.0f,0.0f };
     	glm::vec3 mapPointsColor					{ 0.0f,0.0f,0.0f };

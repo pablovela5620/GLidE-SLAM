@@ -908,10 +908,6 @@ public:
 
     void setMap(ORB_SLAM2::Map* map) { m_map = map; }
 
-    void setUpdateFramesFlag() {m_updateDirectTrackFlag.store(true);}
-    bool checkUpdateFramesFlag() const {return m_updateDirectTrackFlag.load();}
-    void clearUpdateFramesFlag(){m_updateDirectTrackFlag.store(false);}
-
     void setViewMatrix(const glm::mat4 view) { m_vMatrix = view; }
     void setProjectionMatrix(const glm::mat4 proj) { m_pMatrix = proj; }
     void setModelMatrix(const glm::mat4 model) { m_mMatrix = model; }
@@ -965,8 +961,7 @@ private:
     int m_width{640};
     int m_height{480};
 
-    std::string m_windowIndTrackTitle{"No title"};
-    std::string m_windowDirTrackTitle{"No title"};
+    std::string m_windowFramesTitle{"No title"};
     std::string m_windowMapTitle{"No title"};
 
     float m_scaleFactor{1.0f};
@@ -977,7 +972,8 @@ private:
     glm::mat4 m_p;
     glm::mat4 m_k;
 
-    glm::vec3 m_keyFrameColor{glm::vec3(0.0f)};
+    glm::vec3 m_currentKeyFrameColor{glm::vec3(0.0f)};
+    glm::vec3 m_AllKeyFrameColor{glm::vec3(0.0f)};
     glm::vec3 m_tweenFrameDirectColor{glm::vec3(0.0f)};
     glm::vec3 m_tweenFrameColor{glm::vec3(0.0f)};
     glm::vec3 m_mapPointsColor{glm::vec3(0.0f)};
@@ -995,10 +991,6 @@ private:
     uint32_t ma_LastMapPointUpdateNumber;
     uint32_t ma_LastFramesUpdateNumber;
 
-    std::atomic<bool> m_updateIndirectTrackFlag{false};
-    std::atomic<bool> m_updateDirectTrackFlag{false};
-    std::atomic<bool> m_updateFeatureDetectionFlag{false};
-
     //tracking window graphic elements (2D)
     std::vector<glm::vec3> m_matchedFeature2DLines;
     cv::Mat m_canvasImage;
@@ -1009,6 +1001,7 @@ private:
 
     //mapping window graphic elements
     //camera frames
+    FrameGizmo* m_currentKeyFrameGfx{nullptr};
     std::map<uint32_t, FrameGizmo*> m_keyFramesGfx;
     std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfx;
     std::map<uint32_t, FrameGizmo*> m_tweenFramesGfx;

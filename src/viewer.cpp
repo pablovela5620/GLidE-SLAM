@@ -9,12 +9,12 @@ bool Viewer::initialize()
     m_width = m_slamViewerSettings->viewerParams.width;
     m_height = m_slamViewerSettings->viewerParams.height;
 
-    m_windowIndTrackTitle = m_slamViewerSettings->viewerParams.windowIndTrackTitle;
-    m_windowDirTrackTitle = m_slamViewerSettings->viewerParams.windowDirTrackTitle;
+    m_windowFramesTitle = m_slamViewerSettings->viewerParams.windowFramesTitle;
     m_windowMapTitle = m_slamViewerSettings->viewerParams.windowMapTitle;
 
     //color
-    m_keyFrameColor = m_slamViewerSettings->viewerParams.keyFrameColor;
+    m_currentKeyFrameColor = m_slamViewerSettings->viewerParams.currentKeyFrameColor;
+    m_AllKeyFrameColor = m_slamViewerSettings->viewerParams.allKeyFrameColor;
     m_tweenFrameDirectColor = m_slamViewerSettings->viewerParams.tweenFrameDirectColor;
     m_tweenFrameColor = m_slamViewerSettings->viewerParams.tweenFrameColor;
     m_mapPointsColor = m_slamViewerSettings->viewerParams.mapPointsColor;
@@ -41,6 +41,10 @@ bool Viewer::initialize()
 
     initializeCamera();
 
+    //initialize current KF frame:
+    glm::mat4 pose(1.0f);
+    m_currentKeyFrameGfx = new FrameGizmo(0, pose, 0);
+    m_currentKeyFrameGfx->initialize();
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     return true;
@@ -71,11 +75,11 @@ void Viewer::run()
             ma_LastFramesUpdateNumber = framesUpdateNumber;
             updateFrames3D();
         }
-
-        if(checkUpdateFramesFlag())
-        {
-            //updateDirectMapping();
-        }
+        //
+        // if(checkUpdateFramesFlag())
+        // {
+        //     //updateDirectMapping();
+        // }
 
         render();
 
@@ -91,7 +95,7 @@ void Viewer::initializeWindows()
     const int widthOffset = m_width + 80;
     const int heightOffset = m_height + 80;
     // m_windowFrames2D Tracking Window (Main OpenGL Context)
-    m_windowFrames2D = GuiWindow::createWindow(50, heightOffset, m_width, m_height, m_windowIndTrackTitle);
+    m_windowFrames2D = GuiWindow::createWindow(50, heightOffset, m_width, m_height, m_windowFramesTitle);
     if (!m_windowFrames2D)
     {
        Logger<std::string>::LogError("Viewer: Failed to initialize m_windowFrames2D tracking window.");
@@ -155,34 +159,34 @@ void Viewer::renderFrames2D()
 {
     //set context and do normal rendering
 
-    if(checkUpdateFramesFlag())
-    {
-        ensureWindowContext(m_windowFrames2D->getDisplay(), m_windowFrames2D->getSurface(), m_windowFrames2D->getContext());
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        m_canvasIndirectTracking->updateImage(m_canvasImage);
-        m_trackLinesGfx->updatePoints(m_matchedFeature2DLines);
-
-        //render background images
-        auto &canvasShader = m_shaders.find("canvasShader")->second;
-        canvasShader->use();
-        canvasShader->setUniform("TexSampler", 0);
-        m_canvasIndirectTracking->render();
-        glUseProgram(0);
-
-        //render tracking elements
-        if (m_trackLinesGfx->getN() > 1)
-        {
-            auto &linesShader = m_shaders.find("linesShader")->second;
-            linesShader->use();
-            linesShader->setUniform("vRGB", m_featureLinesColor);
-            m_trackLinesGfx->render();
-            glUseProgram(0);
-        }
-
-        clearUpdateFramesFlag();
-
-        m_windowFrames2D->onUpdateWindow();
-    }
+    // if(checkUpdateFramesFlag())
+    // {
+    //     ensureWindowContext(m_windowFrames2D->getDisplay(), m_windowFrames2D->getSurface(), m_windowFrames2D->getContext());
+    //     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    //     m_canvasIndirectTracking->updateImage(m_canvasImage);
+    //     m_trackLinesGfx->updatePoints(m_matchedFeature2DLines);
+    //
+    //     //render background images
+    //     auto &canvasShader = m_shaders.find("canvasShader")->second;
+    //     canvasShader->use();
+    //     canvasShader->setUniform("TexSampler", 0);
+    //     m_canvasIndirectTracking->render();
+    //     glUseProgram(0);
+    //
+    //     //render tracking elements
+    //     if (m_trackLinesGfx->getN() > 1)
+    //     {
+    //         auto &linesShader = m_shaders.find("linesShader")->second;
+    //         linesShader->use();
+    //         linesShader->setUniform("vRGB", m_featureLinesColor);
+    //         m_trackLinesGfx->render();
+    //         glUseProgram(0);
+    //     }
+    //
+    //     clearUpdateFramesFlag();
+    //
+    //     m_windowFrames2D->onUpdateWindow();
+    // }
 }
 
 void Viewer::renderMap3D()
@@ -200,7 +204,7 @@ void Viewer::renderMap3D()
     {
         m_mMatrix = it->second->getPose();
         setMatrices();
-        basicShader->setUniform("vRGB", m_keyFrameColor);
+        basicShader->setUniform("vRGB", m_AllKeyFrameColor);
         basicShader->setUniform("mvpMatrix", m_mvpMatrix);
         it->second->render();
     }
@@ -225,10 +229,18 @@ void Viewer::renderMap3D()
         it->second->render();
     }
 
+    //render current KF (main frame that shows up in 3D and active camera follows)
+    m_mMatrix = m_currentKeyFrameGfx->getPose();
+    float s = 2.0f;
+    m_mMatrix = m_mMatrix * glm::scale(glm::mat4(1.0f), glm::vec3(s));
+    setMatrices();
+    basicShader->setUniform("vRGB", m_currentKeyFrameColor);
+    basicShader->setUniform("mvpMatrix", m_mvpMatrix);
+    m_currentKeyFrameGfx->render();
+    glUseProgram(0);
 
     auto &pointShader = m_shaders.find("pointShader")->second;
     pointShader->use();
-
     //ref map points
     if(m_mapPointsRefGfx->getN()>0)
     {
@@ -350,13 +362,14 @@ void Viewer::updateKFrames()
 
         uint32_t id = frames[n]->mnFrameId;
 
-        //update latest kf id
+        //update latest kf stuff
         if (id > lastKeyframeID)
         {
             lastKeyframeID = id;
             lastKeyframePose = pose;
             if (m_activeCamera->isFollowing())
                 m_activeCamera->setTarget(lastKeyframePose);
+            m_currentKeyFrameGfx->setPose(pose);
         }
         //if frame exists already, update pose
         if (m_keyFramesGfx.count(id))
@@ -624,25 +637,40 @@ void Viewer::shutdown()
     stop();
 
     //TODO: Make sure delete all allocated objects, deference pointers
+    Logger<std::string>::LogInfoI("Viewer: Shutting down.");
 
+    // Delete map contents
+    for (auto& pair : m_keyFramesGfx)
+        delete pair.second;
+    m_keyFramesGfx.clear();
 
+    for (auto& pair : m_tweenFramesDirectGfx)
+        delete pair.second;
+    m_tweenFramesDirectGfx.clear();
+
+    for (auto& pair : m_tweenFramesGfx)
+        delete pair.second;
+    m_tweenFramesGfx.clear();
+
+    delete m_trackLinesGfx;
     delete m_canvasIndirectTracking;
     delete m_canvasDirectTracking;
-
-
     delete m_mapPointsGfx;
+    delete m_mapPointsRefGfx;
 
-    delete m_windowFrames2D;
-    m_canvasIndirectTracking = nullptr;
+    // Exit windows BEFORE deleting
+    if (m_windowFrames2D) {
+        m_windowFrames2D->exit();
+        delete m_windowFrames2D;
+        m_windowFrames2D = nullptr;
+    }
 
+    if (m_windowMap3D) {
+        m_windowMap3D->exit();
+        delete m_windowMap3D;
+        m_windowMap3D = nullptr;
+    }
 
-    m_windowFrames2D->exit();
-    m_windowMap3D->exit();
-
-
-    m_windowFrames2D = nullptr;
-    m_windowMap3D = nullptr;
-    Logger<std::string>::LogInfoI("Viewer: Shutting down.");
 }
 
 void Viewer::onMouse(const UIEvent &e)
