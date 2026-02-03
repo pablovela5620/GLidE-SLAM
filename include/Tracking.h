@@ -144,7 +144,7 @@ protected:
     bool NeedNewKeyFrame();
     void CreateNewKeyFrame();
 
-    bool trackDirectIC_fix(FrameDirect *newFrame, FrameDirect* oldFrame, const std::vector<DirectTrackCache> &dtCache, bool useMotion, float& chi2);
+    bool trackDirectIC(FrameDirect *newFrame, FrameDirect* oldFrame, const std::vector<DirectTrackCache> &dtCache, bool useMotion, float& chi2);
 
     bool trackPrecompute(const Frame& frame, std::vector<DirectTrackCache> &dtCache);
     bool SwitchToIndirect(float chi2);

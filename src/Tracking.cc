@@ -364,7 +364,7 @@ namespace ORB_SLAM2
                     CheckReplacedInLastFrame();
 
                     bool bDirectTrackRecovery = mCurrentDirectFrame.mnId < mpPrevDirectRefID + 3;
-                    mbDirectTrackOk = trackDirectIC_fix(&mCurrentDirectFrame, &mLastDirectFrame, m_directTrackCache,
+                    mbDirectTrackOk = trackDirectIC(&mCurrentDirectFrame, &mLastDirectFrame, m_directTrackCache,
                                                         false, mLastDirectChi2);
                     bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                     mbUseDirectTracking = false;
@@ -626,7 +626,7 @@ namespace ORB_SLAM2
     // - Pass 1 (iter==0 only): for each point, if projected patch MSE is bad -> search small neighborhood for best match,
     //   discard if still bad / too far / ambiguous. Store (du,dv,valid) per point.
     // - Pass 2 (all iters): reproject with current pose each iter, then sample patch at (uc+du, vc+dv) and accumulate H,b.
-    bool Tracking::trackDirectIC_fix(FrameDirect *newFrame, FrameDirect *oldFrame,
+    bool Tracking::trackDirectIC(FrameDirect *newFrame, FrameDirect *oldFrame,
                                      const std::vector<DirectTrackCache> &dtCache, bool useMotion, float &chi2)
     {
         if (useMotion)
