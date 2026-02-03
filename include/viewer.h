@@ -885,6 +885,37 @@ private:
     EGLSurface m_eglSurface;
 };
 
+class GPUCompute
+{
+    public:
+
+    GPUCompute();
+    void initialize(const int w, const int h, const int levels, const float scaleFactor,
+        const float fx, const float fy, const float cx, const float cy);
+    bool buildPyramid(cv::Mat image);
+    bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
+    bool track(const cv::Mat& image, const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
+    bool shutDown();
+
+private:
+
+    int m_width{0};
+    int m_height{0};
+    int m_nLevels{0};
+    float m_scaleFactor{1.0f};
+    float m_fx{0.0f};
+    float m_fy{0.0f};
+    float m_cx{0.0f};
+    float m_cy{0.0f};
+
+
+    std::vector<GLuint> m_pyrTexHandles;
+    std::vector<int> m_levelWidth;
+    std::vector<int> m_levelHeight;
+    GLuint m_tempTex{0};
+    GLuint m_blurTex{0};
+
+};
 class Viewer
 {
 public:
@@ -1055,6 +1086,7 @@ private:
     bool m_isInitialized{false};
 
     //Compute Shaders (Image Processing)
+    GPUCompute* m_gpuCompute{nullptr};
     std::thread                m_computeThread;
     std::mutex                 m_jobQueueMutex;
     std::condition_variable    m_jobQueueCondition;

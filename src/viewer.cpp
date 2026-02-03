@@ -1,6 +1,18 @@
 #include "viewer.h"
 
 
+void GPUCompute::initialize(const int w, const int h, const int levels, const float scaleFactor, const float fx,
+    const float fy, const float cx, const float cy)
+{
+    m_width = w;
+    m_height = h;
+    m_scaleFactor = scaleFactor;
+    m_nLevels = levels;
+    m_fx = fx;
+    m_fy = fy;
+    m_cx = cx;
+    m_cy = cy;
+}
 
 bool Viewer::initialize()
 {
