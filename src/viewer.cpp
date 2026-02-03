@@ -810,25 +810,6 @@ void Viewer::initializeShaders()
     m_shaders["pointShader"] = pointShader;
     std::cout << "pointShader shader loaded." << std::endl;
 
-    shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> pointColorShader = std::make_shared<Shader>();
-    pointColorShader->setHandle(shaderProgram);
-    pointColorShader->compile(GL_VERTEX_SHADER, "shaders/pointColorShader.vert");
-    pointColorShader->compile(GL_FRAGMENT_SHADER, "shaders/pointColorShader.frag");
-    pointColorShader->link();
-    m_shaders["pointColorShader"] = pointColorShader;
-    std::cout << "pointColorShader shader loaded." << std::endl;
-
-
-    shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> shaderSimpleColor = std::make_shared<Shader>();
-    shaderSimpleColor->setHandle(shaderProgram);
-    shaderSimpleColor->compile(GL_VERTEX_SHADER, "shaders/coloredVtxShader.vert");
-    shaderSimpleColor->compile(GL_FRAGMENT_SHADER, "shaders/coloredVtxShader.frag");
-    shaderSimpleColor->link();
-    m_shaders["colorVtxShader"] = shaderSimpleColor;
-    std::cout << "colored shader loaded." << std::endl;
-
     //canvas shader
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> shaderCanvas = std::make_shared<Shader>();
@@ -848,8 +829,6 @@ void Viewer::initializeShaders()
     shaderLines->link();
     m_shaders["linesShader"] = shaderLines;
     std::cout << "lines shader loaded." << std::endl;
-
-
 
     //compute shader
     shaderProgram = glCreateProgram();
