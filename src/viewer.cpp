@@ -1,8 +1,7 @@
 #include "viewer.h"
 
 
-void GPUCompute::initialize(const int w, const int h, const int levels, const float scaleFactor, const float fx,
-    const float fy, const float cx, const float cy)
+void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, float fy, float cx, float cy)
 {
     m_width = w;
     m_height = h;
@@ -50,17 +49,29 @@ void GPUCompute::initializeImagePyramids()
     glGenTextures(m_nLevels - 1, m_tempTexHandles.data());
     glGenTextures(m_nLevels - 1, m_blurTexHandles.data());
 
-    for (size_t L = 0; L < m_nLevels - 1; ++L) {
+    for (size_t L = 0; L < m_nLevels - 1; ++L)
+    {
         glBindTexture(GL_TEXTURE_2D, m_tempTexHandles[L]);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         glBindTexture(GL_TEXTURE_2D, m_blurTexHandles[L]);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
+
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+bool GPUCompute::buildPyramid(cv::Mat image)
+{
 }
 
 bool Viewer::initialize()

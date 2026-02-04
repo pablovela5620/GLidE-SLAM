@@ -890,9 +890,8 @@ class GPUCompute
 {
     public:
 
-    GPUCompute();
-    void initialize(const int w, const int h, const int levels, const float scaleFactor,
-        const float fx, const float fy, const float cx, const float cy);
+    GPUCompute(){};
+    void initialize(int w,int h,int levels,float scaleFactor, float fx, float fy, float cx, float cy);
     bool buildPyramid(cv::Mat image);
     bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
     bool track(const cv::Mat& image, const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
@@ -919,8 +918,6 @@ private:
 
     std::vector<int> m_levelWidth;
     std::vector<int> m_levelHeight;
-    GLuint m_tempTex{0};
-    GLuint m_blurTex{0};
 
 };
 
