@@ -899,6 +899,9 @@ class GPUCompute
     bool shutDown();
 
 private:
+    void initializeImagePyramids();
+
+private:
 
     int m_width{0};
     int m_height{0};
@@ -911,12 +914,16 @@ private:
 
 
     std::vector<GLuint> m_pyrTexHandles;
+    std::vector<GLuint> m_tempTexHandles;
+    std::vector<GLuint> m_blurTexHandles;
+
     std::vector<int> m_levelWidth;
     std::vector<int> m_levelHeight;
     GLuint m_tempTex{0};
     GLuint m_blurTex{0};
 
 };
+
 class Viewer
 {
 public:

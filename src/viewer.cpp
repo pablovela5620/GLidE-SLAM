@@ -13,19 +13,23 @@ void GPUCompute::initialize(const int w, const int h, const int levels, const fl
     m_cx = cx;
     m_cy = cy;
 
+    initializeImagePyramids();
+}
+
+void GPUCompute::initializeImagePyramids()
+{
     //initialize level texture dimensions:
-    m_levelWidth.resize(levels);
-    m_levelHeight.resize(levels);
-    m_levelWidth[0] = w;
-    m_levelHeight[0] = h;
+    m_levelWidth.resize(m_nLevels);
+    m_levelHeight.resize(m_nLevels);
+    m_levelWidth[0] = m_width;
+    m_levelHeight[0] = m_height;
     for (size_t i = 1; i < m_nLevels; i++)
     {
         m_levelWidth[i] = floor((m_levelWidth[i - 1] / m_scaleFactor) + 0.5);
         m_levelHeight[i] = floor((m_levelHeight[i - 1] / m_scaleFactor) + 0.5);
     }
 
-
-    //initialize textures storage
+    //initialize and allocate image pyramid textures storage
     m_pyrTexHandles.resize(m_nLevels);
     glGenTextures(m_nLevels, m_pyrTexHandles.data());
     for (size_t L = 0; L < m_nLevels; ++L)
@@ -40,15 +44,23 @@ void GPUCompute::initialize(const int w, const int h, const int levels, const fl
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    glGenTextures(1, &m_tempTex);
-    glBindTexture(GL_TEXTURE_2D, m_tempTex);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[0], m_levelHeight[0]);
+    //initialize and allocate temporary and blur texturesstorage
+    m_tempTexHandles.resize(m_nLevels - 1);  // don't need one for last level
+    m_blurTexHandles.resize(m_nLevels - 1);
+    glGenTextures(m_nLevels - 1, m_tempTexHandles.data());
+    glGenTextures(m_nLevels - 1, m_blurTexHandles.data());
 
-    glGenTextures(1, &m_blurTex);
-    glBindTexture(GL_TEXTURE_2D, m_blurTex);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[0], m_levelHeight[0]);
+    for (size_t L = 0; L < m_nLevels - 1; ++L) {
+        glBindTexture(GL_TEXTURE_2D, m_tempTexHandles[L]);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(GL_TEXTURE_2D, m_blurTexHandles[L]);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
 }
 
 bool Viewer::initialize()
@@ -2111,7 +2123,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     const EGLint configAttribs[] =
     {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR),
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
@@ -2120,7 +2132,6 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
 
     EGLint contextAttribs[] = {
         EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
-        EGL_CONTEXT_MINOR_VERSION_KHR, 1,  // or 2 if you want 3.2
         EGL_NONE
     };
 
@@ -2181,6 +2192,14 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     SDL_SysWMinfo sysInfo;
     SDL_VERSION(&sysInfo.version);
     SDL_GetWindowWMInfo(m_window, &sysInfo);
+
+
+    if (!eglBindAPI(EGL_OPENGL_ES_API))
+    {
+        EGLint error = eglGetError();
+        Logger<std::string>::LogError("eglBindAPI(OpenGL ES) failed: " + std::to_string(error));
+        return false;
+    }
 
     // ------------------------------------------------------------
     // Create a new context sharing with the main one
@@ -2255,7 +2274,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     const EGLint configAttribs[] =
     {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR),
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
@@ -2265,7 +2284,6 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     EGLint contextAttribs[] =
     {
         EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
-        EGL_CONTEXT_MINOR_VERSION_KHR, 1,
         EGL_NONE
     };
 
@@ -2352,6 +2370,13 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     SDL_SysWMinfo sysInfo;
     SDL_VERSION(&sysInfo.version); // Set SDL version
     SDL_GetWindowWMInfo(m_window, &sysInfo);
+
+    if (!eglBindAPI(EGL_OPENGL_ES_API))
+    {
+        EGLint error = eglGetError();
+        Logger<std::string>::LogError("eglBindAPI(OpenGL ES) failed: " + std::to_string(error));
+        return false;
+    }
 
 
     m_eglContext = eglCreateContext(m_eglDisplay, m_eglConfig, sharedContext, contextAttribs);
