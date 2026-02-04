@@ -2111,16 +2111,16 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     const EGLint configAttribs[] =
     {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_RENDERABLE_TYPE, (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR),
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
         EGL_NONE
     };
 
-    EGLint contextAttribs[] =
-    {
-        EGL_CONTEXT_CLIENT_VERSION, 3,
+    EGLint contextAttribs[] = {
+        EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
+        EGL_CONTEXT_MINOR_VERSION_KHR, 1,  // or 2 if you want 3.2
         EGL_NONE
     };
 
@@ -2255,7 +2255,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     const EGLint configAttribs[] =
     {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_RENDERABLE_TYPE, (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR),
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
@@ -2264,7 +2264,8 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
 
     EGLint contextAttribs[] =
     {
-        EGL_CONTEXT_CLIENT_VERSION, 3,
+        EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
+        EGL_CONTEXT_MINOR_VERSION_KHR, 1,
         EGL_NONE
     };
 

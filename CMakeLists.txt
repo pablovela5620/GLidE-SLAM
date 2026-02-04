@@ -53,7 +53,7 @@ if(USE_EGL_SDL)
 endif()
 
 set(OpenGL_GL_PREFERENCE "GLVND")
-include_directories(/home/caps/Libs/glad/OpenGLES/glad/include)
+include_directories(${PROJECT_SOURCE_DIR}/Thirdparty/glad/include)
 
 find_package(OpenGL REQUIRED)
 if(OpenGL_FOUND)
@@ -121,7 +121,7 @@ add_library(${PROJECT_NAME} SHARED
         include/Logger.h
         include/viewer.h
         src/viewer.cpp
-        src/glad.c
+        ${PROJECT_SOURCE_DIR}/Thirdparty/glad/src/glad.c
 )
 
 target_link_libraries(${PROJECT_NAME}

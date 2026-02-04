@@ -23,6 +23,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 
 #include <GLES3/gl3.h>
 #include <GLES3/gl3ext.h>
