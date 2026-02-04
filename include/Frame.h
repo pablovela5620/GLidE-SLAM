@@ -131,6 +131,7 @@ public:
     cv::Mat UnprojectStereo(const int &i);
 
 
+    void computeImagePyramids(const cv::Mat& imGray);
 public:
     // Vocabulary used for relocalization.
     ORBVocabulary* mpORBvocabulary;
@@ -228,7 +229,7 @@ public:
 
     static bool mbInitialComputations;
 
-
+    int mnLevels{NLEVELS_DIRECT};
     std::vector<cv::Mat> m_pyrImg;
 
 

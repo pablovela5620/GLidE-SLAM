@@ -272,17 +272,6 @@ namespace ORB_SLAM2
                 cvtColor(mImGray, mImGray, cv::COLOR_BGR2GRAY);
         }
 
-        cv::Mat gray32f;
-        mImGray.convertTo(gray32f, CV_32F, 1.0 / 255.0);
-
-
-        //gather direct tracking data
-        //TODO: Maybe put in a function later
-        ImageData imageData;
-        static const float scaleFactor = 1.2;
-
-        imageData.pyrImg.resize(NLEVELS_DIRECT);
-        imageData.pyrImg[0] = gray32f;
 
         if (mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)
             mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
@@ -292,18 +281,6 @@ namespace ORB_SLAM2
                                   mThDepth);
             mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
         }
-
-        //build image pyramids and gradients
-        for (int L = 1; L < NLEVELS_DIRECT; ++L)
-        {
-            cv::Mat smoothed;
-            cv::GaussianBlur(imageData.pyrImg[L - 1], smoothed, cv::Size(5, 5), 1.0, 1.0, cv::BORDER_REFLECT101);
-            cv::resize(smoothed, imageData.pyrImg[L], cv::Size(), 1.0 / scaleFactor, 1.0 / scaleFactor,
-                       cv::INTER_LINEAR);
-        }
-
-        //TODO: Currently only included in Frame
-        mCurrentFrame.m_pyrImg = std::move(imageData.pyrImg);
 
         Logger<std::string>::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
@@ -1379,6 +1356,7 @@ namespace ORB_SLAM2
         mpPrevDirectRefID = mCurrentFrame.mnId;
         mLastDirectFrame = FrameDirect(mCurrentFrame);
         mLastDirectFrame.m_pyrImg = mCurrentFrame.m_pyrImg;
+        mCurrentFrame.computeImagePyramids(mImGray);
         trackPrecompute(mCurrentFrame, m_directTrackCache);
     }
 

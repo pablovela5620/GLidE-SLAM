@@ -301,6 +301,8 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     mb = mbf/fx;
 
     AssignFeaturesToGrid();
+
+
 }
 
 void Frame::AssignFeaturesToGrid()
@@ -767,4 +769,20 @@ cv::Mat Frame::UnprojectStereo(const int &i)
         return cv::Mat();
 }
 
+void Frame::computeImagePyramids(const cv::Mat& imGray)
+{
+
+    cv::Mat gray32f;
+    imGray.convertTo(gray32f, CV_32F, 1.0/255.0);
+    m_pyrImg.resize(mnLevels);
+    m_pyrImg[0]    = gray32f;
+
+    //build image pyramids and gradients
+    for (int L = 1; L < mnLevels; ++L)
+    {
+        cv::Mat smoothed;
+        cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REFLECT101);
+        cv::resize(smoothed,m_pyrImg[L],cv::Size(),1.0 / SCALE_FACTOR,1.0 / SCALE_FACTOR,cv::INTER_LINEAR);
+    }
+}
 } //namespace ORB_SLAM
