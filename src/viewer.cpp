@@ -12,6 +12,43 @@ void GPUCompute::initialize(const int w, const int h, const int levels, const fl
     m_fy = fy;
     m_cx = cx;
     m_cy = cy;
+
+    //initialize level texture dimensions:
+    m_levelWidth.resize(levels);
+    m_levelHeight.resize(levels);
+    m_levelWidth[0] = w;
+    m_levelHeight[0] = h;
+    for (size_t i = 1; i < m_nLevels; i++)
+    {
+        m_levelWidth[i] = floor((m_levelWidth[i - 1] / m_scaleFactor) + 0.5);
+        m_levelHeight[i] = floor((m_levelHeight[i - 1] / m_scaleFactor) + 0.5);
+    }
+
+
+    //initialize textures storage
+    m_pyrTexHandles.resize(m_nLevels);
+    glGenTextures(m_nLevels, m_pyrTexHandles.data());
+    for (size_t L = 0; L < m_nLevels; ++L)
+    {
+        glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[L]);
+
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
+    glGenTextures(1, &m_tempTex);
+    glBindTexture(GL_TEXTURE_2D, m_tempTex);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[0], m_levelHeight[0]);
+
+    glGenTextures(1, &m_blurTex);
+    glBindTexture(GL_TEXTURE_2D, m_blurTex);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[0], m_levelHeight[0]);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 bool Viewer::initialize()
