@@ -107,7 +107,10 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
             mpViewer->setMap(mpMap);
         mptViewer = new thread(&Viewer::run, mpViewer);
         mpTracker->SetViewer(mpViewer);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
+
+
 
     //Set pointers between threads
     mpTracker->SetLocalMapper(mpLocalMapper);
