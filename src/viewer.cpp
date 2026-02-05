@@ -17,7 +17,7 @@ void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, f
 
 bool GPUCompute::setShaders(GLuint gauss8CHandle,GLuint gauss32FHandle, GLuint resizeHandle)
 {
-    if (gauss8CHandle == 0 || gauss32FHandle || resizeHandle == 0)
+    if (gauss8CHandle == 0 || gauss32FHandle == 0 || resizeHandle == 0)
         return false;
 
     m_shaderGauss8C=gauss8CHandle;
@@ -27,6 +27,7 @@ bool GPUCompute::setShaders(GLuint gauss8CHandle,GLuint gauss32FHandle, GLuint r
     m_blurDirectionUniform8C = glGetUniformLocation(m_shaderGauss8C, "uDir");
     m_blurDirectionUniform32F = glGetUniformLocation(m_shaderGauss32F, "uDir");
     m_scaleFactorUniform   = glGetUniformLocation(m_shaderResize, "uScaleFactor");
+    m_inputTextureUniform8C = glGetUniformLocation(m_shaderGauss8C, "inputTexture");
 
 
     return true;
@@ -140,6 +141,7 @@ bool GPUCompute::buildPyramid(cv::Mat image)
             // Bind as texture (sampler2D), not image
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[0]);
+            glUniform1i(m_inputTextureUniform8C, 0);
         }
         else
         {
@@ -175,6 +177,74 @@ bool GPUCompute::buildPyramid(cv::Mat image)
     }
 
     glUseProgram(0);
+
+
+
+
+    //TODO: Remove, only for testing how similar to Opencv image pyramids
+    std::vector<cv::Mat> m_pyrImg;
+    cv::Mat gray32f;
+    image.convertTo(gray32f, CV_32FC1, 1.0/255.0);
+    m_pyrImg.resize(m_nLevels);
+    m_pyrImg[0]    = gray32f;
+
+    //build image pyramids
+    for (int L = 1; L < m_nLevels; ++L)
+    {
+        cv::Mat smoothed;
+        cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REFLECT101);
+        cv::resize(smoothed,m_pyrImg[L],cv::Size(),1.0 / m_scaleFactor,1.0 / m_scaleFactor,cv::INTER_LINEAR);
+    }
+
+
+
+    // Download GPU textures and compare
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    for (int L = 1; L < m_nLevels; ++L)  // skip level 0 (R8 vs R32F mismatch)
+    {
+        int w = m_levelWidth[L];
+        int h = m_levelHeight[L];
+
+        // Attach texture to FBO
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_pyrTexHandles[L], 0);
+
+        // Read back
+        cv::Mat gpuLevel(h, w, CV_32F);
+        glReadPixels(0, 0, w, h, GL_RED, GL_FLOAT, gpuLevel.data);
+
+        // OpenCV stores top-to-bottom, OpenGL bottom-to-top
+        cv::flip(gpuLevel, gpuLevel, 0);
+
+        // Compare
+        cv::Mat diff;
+        cv::absdiff(m_pyrImg[L], gpuLevel, diff);
+
+        double minVal, maxVal;
+        cv::Point minLoc, maxLoc;
+        cv::minMaxLoc(diff, &minVal, &maxVal, &minLoc, &maxLoc);
+
+        float meanErr = cv::mean(diff)[0];
+
+        std::cout << "Level " << L
+                  << " (" << w << "x" << h << ")"
+                  << " maxDiff=" << maxVal
+                  << " meanDiff=" << meanErr
+                  << " maxLoc=(" << maxLoc.x << "," << maxLoc.y << ")"
+                  << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fbo);
+
+
+
+
+
+
+
     return true;
 }
 

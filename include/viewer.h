@@ -930,6 +930,7 @@ private:
 
     GLint m_blurDirectionUniform8C{-1};
     GLint m_blurDirectionUniform32F{-1};
+    GLint m_inputTextureUniform8C{-1};
     GLint m_scaleFactorUniform{-1};
 };
 
