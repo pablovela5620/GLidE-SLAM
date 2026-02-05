@@ -15,6 +15,16 @@ void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, f
     initializeImagePyramids();
 }
 
+bool GPUCompute::setShaders(GLuint gaussHandle, GLuint resizeHandle)
+{
+    if (gaussHandle == 0 || resizeHandle == 0)
+        return false;
+
+    m_shaderGauss=gaussHandle;
+    m_shaderResize=resizeHandle;
+    return true;
+}
+
 void GPUCompute::initializeImagePyramids()
 {
     //initialize level texture dimensions:
@@ -24,8 +34,8 @@ void GPUCompute::initializeImagePyramids()
     m_levelHeight[0] = m_height;
     for (size_t i = 1; i < m_nLevels; i++)
     {
-        m_levelWidth[i] = floor((m_levelWidth[i - 1] / m_scaleFactor) + 0.5);
-        m_levelHeight[i] = floor((m_levelHeight[i - 1] / m_scaleFactor) + 0.5);
+        m_levelWidth[i] = floor(((float)m_levelWidth[i - 1] / m_scaleFactor) + 0.5);
+        m_levelHeight[i] = floor(((float)m_levelHeight[i - 1] / m_scaleFactor) + 0.5);
     }
 
     //initialize and allocate image pyramid textures storage
@@ -179,7 +189,7 @@ void Viewer::initializeWindows()
                         m_windowFrames2D->getContext());
 
     // shared OpenGL resources, valid for all
-    initializeBuffers();
+    //initializeBuffers();
     initializeShaders();
 
     m_trackLinesGfx = new Lines2D();
@@ -863,6 +873,8 @@ void Viewer::stop()
 
 void Viewer::initializeShaders()
 {
+    //TODO: Remove all smart pointers -> Use raw pointers
+
     GLuint shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> shaderSimpleWhite = std::make_shared<Shader>();
     shaderSimpleWhite->setHandle(shaderProgram);
@@ -871,7 +883,7 @@ void Viewer::initializeShaders()
     shaderSimpleWhite->compile(GL_FRAGMENT_SHADER, "shaders/basicShader.frag");
     shaderSimpleWhite->link();
     m_shaders["basicShader"] = shaderSimpleWhite;
-    std::cout << "basic shader loaded." << std::endl;
+    Logger<std::string>::LogInfoI("basic shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> pointShader = std::make_shared<Shader>();
@@ -880,7 +892,7 @@ void Viewer::initializeShaders()
     pointShader->compile(GL_FRAGMENT_SHADER, "shaders/pointShader.frag");
     pointShader->link();
     m_shaders["pointShader"] = pointShader;
-    std::cout << "pointShader shader loaded." << std::endl;
+    Logger<std::string>::LogInfoI("pointShader shader loaded.");
 
     //canvas shader
     shaderProgram = glCreateProgram();
@@ -890,7 +902,7 @@ void Viewer::initializeShaders()
     shaderCanvas->compile(GL_FRAGMENT_SHADER, "shaders/canvasShader.frag");
     shaderCanvas->link();
     m_shaders["canvasShader"] = shaderCanvas;
-    std::cout << "canvas shader loaded." << std::endl;
+    Logger<std::string>::LogInfoI("canvas shader loaded.");
 
     //lines shader
     shaderProgram = glCreateProgram();
@@ -900,17 +912,26 @@ void Viewer::initializeShaders()
     shaderLines->compile(GL_FRAGMENT_SHADER, "shaders/linesShader.frag");
     shaderLines->link();
     m_shaders["linesShader"] = shaderLines;
-    std::cout << "lines shader loaded." << std::endl;
+    Logger<std::string>::LogInfoI("lines shader loaded.");
 
-    //compute shader
+    //compute shaders
+    //image pyramid shaders, gauss resize
     shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> vtxFeature = std::make_shared<Shader>();
-    vtxFeature->setHandle(shaderProgram);
-    vtxFeature->compile(GL_COMPUTE_SHADER, "shaders/vtxFeatureShader.comp");
-    vtxFeature->link();
-    m_shaders["vtxFeatureShader"] = vtxFeature;
-    std::cout << "compute shader loaded." << std::endl;
-    Logger<std::string>::LogInfoIII("Viewer shaders initialized.");
+    std::shared_ptr<Shader> gaussShader = std::make_shared<Shader>();
+    gaussShader->setHandle(shaderProgram);
+    gaussShader->compile(GL_COMPUTE_SHADER, "shaders/gaussShader.comp");
+    gaussShader->link();
+    m_shaders["gaussShader"] = gaussShader;
+    Logger<std::string>::LogInfoI("gauss shader loaded.");
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> resizeShader = std::make_shared<Shader>();
+    resizeShader->setHandle(shaderProgram);
+    resizeShader->compile(GL_COMPUTE_SHADER, "shaders/resizeShader.comp");
+    resizeShader->link();
+    m_shaders["resizeShader"] = resizeShader;
+    Logger<std::string>::LogInfoI("resize shader loaded.");
+
 }
 
 void Viewer::initializeBuffers()

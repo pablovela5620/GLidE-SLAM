@@ -66,7 +66,7 @@ FrameDirect::FrameDirect(const cv::Mat &imGray, const double &timeStamp, cv::Mat
     m_pyrImg.resize(mnLevels);
     m_pyrImg[0]    = gray32f;
 
-    //build image pyramids and gradients
+    //build image pyramids
     for (int L = 1; L < mnLevels; ++L)
     {
         cv::Mat smoothed;
