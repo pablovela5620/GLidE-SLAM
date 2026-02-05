@@ -926,13 +926,14 @@ private:
     //pyramid shader handles
     GLuint m_shaderGauss{0};
     GLuint m_shaderResize{0};
-
+    GLint m_blurDirectionUniform{-1};
+    GLint m_scaleFactorUniform{-1};
 };
 
 class Viewer
 {
 public:
-    //Viewer(SlamParams* slamParams);
+    //TODO: separeate methods into private/public
     Viewer(ORB_SLAM2::System* system, SlamSettings* slamSettings) : m_system(system), m_slamViewerSettings(slamSettings){};
 
     bool initialize();
@@ -973,6 +974,8 @@ public:
     bool checkPause(){return m_pauseSimulation.load();}
     void setPause() {m_pauseSimulation.store(true);}
     void setScaleFactor(const float scale) { m_scaleFactor = scale; }
+
+    void updateSourceImage(const cv::Mat& image);
 private:
     void initializeWindows();
     void initializeProjectionMatrix();
@@ -1032,6 +1035,7 @@ private:
     ORB_SLAM2::Map* m_map{nullptr};
 
     //updates from other threads
+    //use use number instead of bool since different methods/asynchronous update
     uint32_t ma_LastMapPointUpdateNumber;
     uint32_t ma_LastFramesUpdateNumber;
 

@@ -22,6 +22,11 @@ bool GPUCompute::setShaders(GLuint gaussHandle, GLuint resizeHandle)
 
     m_shaderGauss=gaussHandle;
     m_shaderResize=resizeHandle;
+
+    m_blurDirectionUniform = glGetUniformLocation(m_shaderGauss, "uDir");
+    m_scaleFactorUniform   = glGetUniformLocation(m_shaderResize, "uScaleFactor");
+
+
     return true;
 }
 
@@ -82,12 +87,70 @@ void GPUCompute::initializeImagePyramids()
 
 bool GPUCompute::buildPyramid(cv::Mat image)
 {
+    glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[0]);
+
+    // For float32, width*4 bytes is always 4-byte aligned; still set explicitly.
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+    glTexSubImage2D(GL_TEXTURE_2D,
+                    0,
+                    0, 0,
+                    m_levelWidth[0], m_levelHeight[0],
+                    GL_RED,
+                    GL_FLOAT,
+                    image.ptr<float>());
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    auto ceilDiv = [](int a, int b) -> GLuint { return (GLuint)((a + (b - 1)) / b); };
+
+
+    for (int L = 1; L < m_nLevels; ++L)
+    {
+        const int srcW = m_levelWidth[L - 1];
+        const int srcH = m_levelHeight[L - 1];
+        const int dstW = m_levelWidth[L];
+        const int dstH = m_levelHeight[L];
+
+        // Gauss Vertical blur
+        glUseProgram(m_shaderGauss);
+        glUniform2i(m_blurDirectionUniform, 0, 1);
+
+        glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
+        glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+        glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+        // Gauss Horizontal blur
+        glUseProgram(m_shaderGauss);
+        glUniform2i(m_blurDirectionUniform, 1, 0);
+
+        glBindImageTexture(0, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
+        glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+        glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+        //Resize
+        glUseProgram(m_shaderResize);
+        glUniform1f(m_scaleFactorUniform, m_scaleFactor);
+
+        glBindImageTexture(0, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
+        glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+        glDispatchCompute(ceilDiv(dstW, 16), ceilDiv(dstH, 16), 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    }
+
+    glUseProgram(0);
+    return true;
 }
 
 bool Viewer::initialize()
 {
 
-
+    m_isInitialized = false;
     m_width = m_slamViewerSettings->viewerParams.width;
     m_height = m_slamViewerSettings->viewerParams.height;
 
@@ -112,24 +175,26 @@ bool Viewer::initialize()
     if (m_windowFrames2D == nullptr)
     {
         Logger<std::string>::LogError("Viewer: Failed to initialize m_windowFrames2D window.");
-        return false;
+        return m_isInitialized;
     }
 
     if (m_windowMap3D == nullptr)
     {
-        return false;
+        return m_isInitialized;
     }
 
 
     initializeCamera();
 
+    //TODO: put in another function, not so clean here
     //initialize current KF frame:
     glm::mat4 pose(1.0f);
     m_currentKeyFrameGfx = new FrameGizmo(0, pose, 0);
     m_currentKeyFrameGfx->initialize();
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
-    return true;
+    m_isInitialized = true;
+    return m_isInitialized;
 }
 
 void Viewer::run()
@@ -170,6 +235,18 @@ void Viewer::run()
         float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
         SDL_Delay(33);
     }
+}
+
+void Viewer::updateSourceImage(const cv::Mat &image)
+{
+    if (m_isInitialized)
+    {
+        if (m_gpuCompute != nullptr)
+        {
+
+        }
+    }
+
 }
 
 void Viewer::initializeWindows()

@@ -62,7 +62,7 @@ FrameDirect::FrameDirect(const cv::Mat &imGray, const double &timeStamp, cv::Mat
     mnId=nNextId++;
 
     cv::Mat gray32f;
-    imGray.convertTo(gray32f, CV_32F, 1.0/255.0);
+    imGray.convertTo(gray32f, CV_32FC1, 1.0/255.0);
     m_pyrImg.resize(mnLevels);
     m_pyrImg[0]    = gray32f;
 
