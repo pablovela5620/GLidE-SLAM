@@ -1,0 +1,47 @@
+#version 310 es
+precision highp float;
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, r32f) readonly  uniform highp image2D inputImage;   // from L-1 to L (0->1, 1->2, 2->3 ...)
+layout(binding = 1, r32f) writeonly uniform highp image2D outputImage;
+
+uniform float uScaleFactor;
+
+float loadClamped(ivec2 p)
+{
+    ivec2 sz = imageSize(inputImage);
+    p = clamp(p, ivec2(0), sz - ivec2(1));
+    return imageLoad(inputImage, p).r;
+}
+
+void main()
+{
+    ivec2 outputPixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageBounds = imageSize(outputImage);
+    if (outputPixel.x >= imageBounds.x || outputPixel.y >= imageBounds.y) return;
+
+    //We must map the "center" of the pixel, given by pixel index (left corner) + 0.5
+    //output pixel is integer location in output image mapped from continuous location wrt to inputImage (inputPixel)
+    vec2 inputPixel = (vec2(outputPixel) + vec2(0.5)) * uScaleFactor - vec2(0.5);
+
+    //get the top-left corner in case fractional pixel (10.3, 7.8) -> (10, 7)
+    ivec2 p0 = ivec2(floor(inputPixel));
+
+    //get other corners, bottom left, top right, bottom right (image space origin 0,0 is top left!)
+    float s00 = loadClamped(p0 + ivec2(0,0));
+    float s10 = loadClamped(p0 + ivec2(1,0));
+    float s01 = loadClamped(p0 + ivec2(0,1));
+    float s11 = loadClamped(p0 + ivec2(1,1));
+
+    //returns fraction offset from pixel top-left corner (10.3, 7.8) -> (0.3, 0.8) used in bilinear interp.
+    vec2  f  = fract(inputPixel);
+
+    //bilinear interpolation for both directions
+    float sx0 = mix(s00, s10, f.x);
+    float sx1 = mix(s01, s11, f.x);
+    float outv = mix(sx0, sx1, f.y);
+
+    //store into image
+    imageStore(outputImage, outputPixel, vec4(outv, 0.0, 0.0, 1.0));
+}

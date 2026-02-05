@@ -1,0 +1,36 @@
+#version 310 es
+precision highp float;
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, r32f) readonly  uniform highp image2D inputImage;
+layout(binding = 1, r32f) writeonly uniform highp image2D outputImage;
+
+uniform ivec2 uDir; // (0,1) or (1,0)
+
+// sigma=1.0, radius=2  => 1D kernel ~ [0.0544887, 0.244201, 0.40262, 0.244201, 0.0544887]
+const float w0 = 0.4026199469;
+const float w1 = 0.2442013420;
+const float w2 = 0.0544886850;
+
+float loadClamped(ivec2 p)
+{
+    ivec2 imageBounds = imageSize(inputImage);
+    p = clamp(p, ivec2(0), imageBounds - ivec2(1));
+    return imageLoad(inputImage, p).r;
+}
+
+void main()
+{
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageBounds  = imageSize(inputImage);
+    if (pix.x >= imageBounds.x || pix.y >= imageBounds.y) return;
+
+    float sum = loadClamped(pix) * w0;
+    sum += loadClamped(pix + uDir * 1) * w1;
+    sum += loadClamped(pix - uDir * 1) * w1;
+    sum += loadClamped(pix + uDir * 2) * w2;
+    sum += loadClamped(pix - uDir * 2) * w2;
+
+    imageStore(outputImage, pix, vec4(sum, 0.0, 0.0, 1.0));
+}
