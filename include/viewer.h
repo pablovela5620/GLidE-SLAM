@@ -892,7 +892,7 @@ class GPUCompute
 
     GPUCompute(){};
     void initialize(int w,int h,int levels,float scaleFactor, float fx, float fy, float cx, float cy);
-    bool setShaders(GLuint gHHandle, GLuint resizeHandle);
+    bool setShaders(GLuint gauss8CHandle,GLuint gauss32FHandle, GLuint resizeHandle);
     bool buildPyramid(cv::Mat image);
     bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
     bool track(const cv::Mat& image, const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
@@ -924,9 +924,12 @@ private:
     float m_gaussSigma{1.0f};
 
     //pyramid shader handles
-    GLuint m_shaderGauss{0};
+    GLuint m_shaderGauss8C{0};
+    GLuint m_shaderGauss32F{0};
     GLuint m_shaderResize{0};
-    GLint m_blurDirectionUniform{-1};
+
+    GLint m_blurDirectionUniform8C{-1};
+    GLint m_blurDirectionUniform32F{-1};
     GLint m_scaleFactorUniform{-1};
 };
 
