@@ -140,24 +140,25 @@ bool GPUCompute::buildPyramid(cv::Mat image)
 
     auto ceilDiv = [](int a, int b) -> GLuint { return (GLuint)((a + (b - 1)) / b); };
 
-    // Convert R8 -> R32F into pyramid level 0
+    // use shader to convert R8 -> R32F into pyramid level 0
     glUseProgram(m_shaderConvert8UCTo32F);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8);
-
-    glUniform1i(m_convertInputTextureUniform, 0);
-
+    glActiveTexture(GL_TEXTURE0); //select texture unit 0
+    glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8); //bind the texture to unit 0
+    //stores the integer 0 into the sampler uniform, the shader reads from texture unit index 0.
+    glUniform1i(m_convertInputTextureUniform, 0); //input texture sample from unit 0
+    //binds image pyramid [0] as image to image unit 1 (in shader: binding = 1)
     glBindImageTexture(1, m_pyrTexHandles[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
+    //dispatch compute shader (16, 16, 1 workgroups), threads: (16*16, total threads)
     glDispatchCompute(ceilDiv(m_levelWidth[0], 16), ceilDiv(m_levelHeight[0], 16), 1);
 
     err = glGetError();
     if (err != GL_NO_ERROR) std::cout << "convert err: 0x" << std::hex << err << std::dec << std::endl;
 
+    //Finish and commit all image writes done by previous compute work: wait until image is fully written pyramid [0]
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-    // Build remaining pyramid levels (ALL 32F)
+    // Build remaining pyramid levels (ALL 32F) from L -1 -> to -> L (level 0 to 1, blur downscale... )
     for (int L = 1; L < m_nLevels; ++L)
     {
         const int srcW = m_levelWidth[L - 1];
@@ -165,9 +166,10 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         const int dstW = m_levelWidth[L];
         const int dstH = m_levelHeight[L];
 
-        // Gauss Vertical blur
+        // Gauss blur shader
+        // Read from pyramidTexture Handle [L - 1] -> apply blur and write to tempTexture Handle [L-1]
         glUseProgram(m_shaderGauss32F);
-        glUniform2i(m_blurDirectionUniform32F, 0, 1);
+        glUniform2i(m_blurDirectionUniform32F, 0, 1); //set direction to vertical
         glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
@@ -175,11 +177,13 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "L" << L << " gaussV err: 0x" << std::hex << err << std::dec << std::endl;
 
+        //wait until previouc compute work is done
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         // Gauss Horizontal blur
+        // Read from tempTexture Handle [L - 1] -> apply blur and write to blurTexture Handle [L-1]
         glUseProgram(m_shaderGauss32F);
-        glUniform2i(m_blurDirectionUniform32F, 1, 0);
+        glUniform2i(m_blurDirectionUniform32F, 1, 0); //set direction to horizontal
         glBindImageTexture(0, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
@@ -187,9 +191,11 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "L" << L << " gaussH err: 0x" << std::hex << err << std::dec << std::endl;
 
+        //wait until previouc compute work is done
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         //Resize
+        // Read from blurTexture Handle [L - 1] -> apply resize and write to pyramid Texture Handle [L]
         glUseProgram(m_shaderResize);
         glUniform1f(m_scaleFactorUniform, m_scaleFactor);
         glBindImageTexture(0, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
@@ -199,6 +205,7 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "L" << L << " resize err: 0x" << std::hex << err << std::dec << std::endl;
 
+        //wait until previouc compute work is done
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     }
 
