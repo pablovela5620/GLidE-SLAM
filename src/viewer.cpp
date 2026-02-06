@@ -1,5 +1,8 @@
 #include "viewer.h"
 
+// At top, after includes
+typedef void (*PFNGLGETBUFFERSUBDATAPROC)(GLenum, GLintptr, GLsizeiptr, void*);
+static PFNGLGETBUFFERSUBDATAPROC glGetBufferSubData = nullptr;
 
 void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, float fy, float cx, float cy)
 {
@@ -15,20 +18,24 @@ void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, f
     initializeImagePyramids();
 }
 
-bool GPUCompute::setShaders(GLuint gauss8CHandle,GLuint gauss32FHandle, GLuint resizeHandle)
+bool GPUCompute::setShaders(GLuint gauss8CHandle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle)
 {
-    if (gauss8CHandle == 0 || gauss32FHandle == 0 || resizeHandle == 0)
+    if (gauss8CHandle == 0 || gauss32FHandle == 0 || resizeHandle == 0 || copySSBOHandle == 0)
         return false;
 
-    m_shaderGauss8C=gauss8CHandle;
-    m_shaderGauss32F=gauss32FHandle;
-    m_shaderResize=resizeHandle;
+    m_shaderGauss8C = gauss8CHandle;
+    m_shaderGauss32F = gauss32FHandle;
+    m_shaderResize = resizeHandle;
+    m_shaderCopySSBO = copySSBOHandle;
 
     m_blurDirectionUniform8C = glGetUniformLocation(m_shaderGauss8C, "uDir");
     m_blurDirectionUniform32F = glGetUniformLocation(m_shaderGauss32F, "uDir");
-    m_scaleFactorUniform   = glGetUniformLocation(m_shaderResize, "uScaleFactor");
     m_inputTextureUniform8C = glGetUniformLocation(m_shaderGauss8C, "inputTexture");
+    m_scaleFactorUniform = glGetUniformLocation(m_shaderResize, "uScaleFactor");
+    m_copyWidthUniform = glGetUniformLocation(m_shaderCopySSBO, "uWidth");
 
+    // Create readback SSBO (size for largest level)
+    glGenBuffers(1, &m_readbackSSBO);
 
     return true;
 }
@@ -105,11 +112,15 @@ bool GPUCompute::buildPyramid(cv::Mat image)
 
     if (image.cols != m_levelWidth[0] || image.rows != m_levelHeight[0]) return false;
 
-
     glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[0]);
 
     // For first image is 8bit (uchar).
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+
     glTexSubImage2D(GL_TEXTURE_2D,
                     0,
                     0, 0,
@@ -118,10 +129,12 @@ bool GPUCompute::buildPyramid(cv::Mat image)
                     GL_UNSIGNED_BYTE,
                     image.ptr<uchar>());
 
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) std::cout << "texSubImage err: 0x" << std::hex << err << std::dec << std::endl;
+
     glBindTexture(GL_TEXTURE_2D, 0);
 
     auto ceilDiv = [](int a, int b) -> GLuint { return (GLuint)((a + (b - 1)) / b); };
-
 
     for (int L = 1; L < m_nLevels; ++L)
     {
@@ -129,8 +142,6 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         const int srcH = m_levelHeight[L - 1];
         const int dstW = m_levelWidth[L];
         const int dstH = m_levelHeight[L];
-
-
 
         if (L==1)
         {
@@ -153,6 +164,10 @@ bool GPUCompute::buildPyramid(cv::Mat image)
 
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
+
+        err = glGetError();
+        if (err != GL_NO_ERROR) std::cout << "L" << L << " gaussV err: 0x" << std::hex << err << std::dec << std::endl;
+
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         // Gauss Horizontal blur
@@ -163,6 +178,10 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
+
+        err = glGetError();
+        if (err != GL_NO_ERROR) std::cout << "L" << L << " gaussH err: 0x" << std::hex << err << std::dec << std::endl;
+
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         //Resize
@@ -173,13 +192,14 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
         glDispatchCompute(ceilDiv(dstW, 16), ceilDiv(dstH, 16), 1);
+
+        err = glGetError();
+        if (err != GL_NO_ERROR) std::cout << "L" << L << " resize err: 0x" << std::hex << err << std::dec << std::endl;
+
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     }
 
     glUseProgram(0);
-
-
-
 
     //TODO: Remove, only for testing how similar to Opencv image pyramids
     std::vector<cv::Mat> m_pyrImg;
@@ -192,60 +212,94 @@ bool GPUCompute::buildPyramid(cv::Mat image)
     for (int L = 1; L < m_nLevels; ++L)
     {
         cv::Mat smoothed;
-        cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REFLECT101);
-        cv::resize(smoothed,m_pyrImg[L],cv::Size(),1.0 / m_scaleFactor,1.0 / m_scaleFactor,cv::INTER_LINEAR);
+        cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REPLICATE);
+        cv::resize(smoothed, m_pyrImg[L], cv::Size(m_levelWidth[L], m_levelHeight[L]), 0, 0, cv::INTER_LINEAR);
     }
 
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
-
-    // Download GPU textures and compare
-    GLuint fbo;
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-    for (int L = 1; L < m_nLevels; ++L)  // skip level 0 (R8 vs R32F mismatch)
+    for (int L = 1; L < m_nLevels; ++L)
     {
         int w = m_levelWidth[L];
         int h = m_levelHeight[L];
 
-        // Attach texture to FBO
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_pyrTexHandles[L], 0);
+        cv::Mat gpuLevel = readbackTexture(m_pyrTexHandles[L], w, h);
 
-        // Read back
-        cv::Mat gpuLevel(h, w, CV_32F);
-        glReadPixels(0, 0, w, h, GL_RED, GL_FLOAT, gpuLevel.data);
+        double gpuMin, gpuMax;
+        cv::minMaxLoc(gpuLevel, &gpuMin, &gpuMax);
+        std::cout << "Level " << L << " (" << w << "x" << h << ") gpuMin=" << gpuMin << " gpuMax=" << gpuMax;
 
-        // OpenCV stores top-to-bottom, OpenGL bottom-to-top
-        cv::flip(gpuLevel, gpuLevel, 0);
+        if (w == m_pyrImg[L].cols && h == m_pyrImg[L].rows)
+        {
+            cv::Mat diff;
+            cv::absdiff(m_pyrImg[L], gpuLevel, diff);
+            double maxVal;
+            cv::minMaxLoc(diff, nullptr, &maxVal);
+            std::cout << " maxDiff=" << maxVal << " mean=" << cv::mean(diff)[0];
+        }
+        std::cout << std::endl;
 
-        // Compare
-        cv::Mat diff;
-        cv::absdiff(m_pyrImg[L], gpuLevel, diff);
 
-        double minVal, maxVal;
-        cv::Point minLoc, maxLoc;
-        cv::minMaxLoc(diff, &minVal, &maxVal, &minLoc, &maxLoc);
+        if (w == m_pyrImg[L].cols && h == m_pyrImg[L].rows)
+        {
+            cv::Mat diff;
+            cv::absdiff(m_pyrImg[L], gpuLevel, diff);
 
-        float meanErr = cv::mean(diff)[0];
+            double minVal, maxVal;
+            cv::minMaxLoc(diff, &minVal, &maxVal);
+            std::cout << "L" << L << " maxDiff=" << maxVal << std::endl;
 
-        std::cout << "Level " << L
-                  << " (" << w << "x" << h << ")"
-                  << " maxDiff=" << maxVal
-                  << " meanDiff=" << meanErr
-                  << " maxLoc=(" << maxLoc.x << "," << maxLoc.y << ")"
-                  << std::endl;
+            // Normalize to full 0-255 range so differences are visible
+            cv::Mat diffVis;
+            diff.convertTo(diffVis, CV_8U, 255.0 / maxVal);
+
+            cv::imshow("Diff L" + std::to_string(L), diffVis);
+        }
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &fbo);
-
-
-
-
-
-
-
+    cv::waitKey(0);
     return true;
+}
+
+
+cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
+{
+    size_t size = (size_t)w * (size_t)h * sizeof(float);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_readbackSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, size, nullptr, GL_STREAM_READ);
+
+    // IMPORTANT: shader uses layout(std430, binding = 1)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_readbackSSBO);
+
+    glUseProgram(m_shaderCopySSBO);
+    glUniform1i(m_copyWidthUniform, w);
+    glBindImageTexture(0, texHandle, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+
+    auto ceilDiv = [](int a, int b) { return (a + b - 1) / b; };
+    glDispatchCompute(ceilDiv(w, 16), ceilDiv(h, 16), 1);
+
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glFinish();
+
+    cv::Mat result(h, w, CV_32F, cv::Scalar(0));
+
+    void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, size, GL_MAP_READ_BIT);
+    if (ptr)
+    {
+        memcpy(result.data, ptr, size);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    else
+    {
+        GLenum err = glGetError();
+        std::cout << "glMapBufferRange failed, err=0x" << std::hex << err << std::dec << std::endl;
+    }
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glUseProgram(0);
+
+    return result;
 }
 
 bool Viewer::initialize()
@@ -293,6 +347,31 @@ bool Viewer::initialize()
     m_currentKeyFrameGfx = new FrameGizmo(0, pose, 0);
     m_currentKeyFrameGfx->initialize();
 
+    //initialize GPUCompute
+    m_gpuCompute = new GPUCompute();
+    const int w = m_slamViewerSettings->directTrackParams.sourceImageWidth;
+    const int h = m_slamViewerSettings->directTrackParams.sourceImageHeight;
+
+    const float fx = m_slamViewerSettings->directTrackParams.fx;
+    const float fy = m_slamViewerSettings->directTrackParams.fy;
+    const float cx = m_slamViewerSettings->directTrackParams.cx;
+    const float cy = m_slamViewerSettings->directTrackParams.cy;
+
+    const int nLevels = m_slamViewerSettings->directTrackParams.nLevels;
+    const float scaleFactor = m_slamViewerSettings->directTrackParams.scaleFactor;
+
+
+    m_gpuCompute->initialize(w, h, nLevels, scaleFactor,fx,fy,cx,cy);
+
+    auto &gaussShader8C = m_shaders.find("gaussShader8C")->second;
+    auto &gaussShader32F = m_shaders.find("gaussShader32F")->second;
+    auto &resizeShader = m_shaders.find("resizeShader")->second;
+    auto &ssboShader = m_shaders.find("copyToSSBO")->second;
+
+    m_gpuCompute->setShaders(gaussShader8C->getHandle(),
+        gaussShader32F->getHandle(),
+        resizeShader->getHandle(), ssboShader->getHandle());
+
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     m_isInitialized = true;
     return m_isInitialized;
@@ -329,8 +408,28 @@ void Viewer::run()
         //     //updateDirectMapping();
         // }
 
-        render();
 
+        cv::Mat img;
+
+        {
+            std::lock_guard<std::mutex> lock(m_sourceImageMutex);
+            if (m_sourceImageAvailable && m_gpuCompute != nullptr)
+            {
+                img = m_sourceImage;
+                m_sourceImageAvailable = false;
+            }
+        }
+
+        if (!img.empty())
+        {
+            ensureWindowContext(m_windowFrames2D->getDisplay(),
+                   m_windowFrames2D->getSurface(),
+                   m_windowFrames2D->getContext());
+            m_gpuCompute->buildPyramid(img);
+        }
+
+
+        render();
 
         //get framerate (this is from viewer only!)
         float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
@@ -342,12 +441,10 @@ void Viewer::updateSourceImage(const cv::Mat &image)
 {
     if (m_isInitialized)
     {
-        if (m_gpuCompute != nullptr)
-        {
-
-        }
+        std::lock_guard<std::mutex> lock(m_sourceImageMutex);
+        m_sourceImage = image.clone();
+        m_sourceImageAvailable = true;
     }
-
 }
 
 void Viewer::initializeWindows()
@@ -918,6 +1015,9 @@ void Viewer::shutdown()
     delete m_mapPointsGfx;
     delete m_mapPointsRefGfx;
 
+    delete m_gpuCompute;
+
+
     // Exit windows BEFORE deleting
     if (m_windowFrames2D) {
         m_windowFrames2D->exit();
@@ -1099,7 +1199,7 @@ void Viewer::initializeShaders()
     gaussShader8C->setHandle(shaderProgram);
     gaussShader8C->compile(GL_COMPUTE_SHADER, "shaders/gaussShader8C.comp");
     gaussShader8C->link();
-    m_shaders["gaussShader"] = gaussShader8C;
+    m_shaders["gaussShader8C"] = gaussShader8C;
     Logger<std::string>::LogInfoI("gauss 8C shader loaded.");
 
     shaderProgram = glCreateProgram();
@@ -1117,6 +1217,21 @@ void Viewer::initializeShaders()
     resizeShader->link();
     m_shaders["resizeShader"] = resizeShader;
     Logger<std::string>::LogInfoI("resize shader loaded.");
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();
+    copySSBO->setHandle(shaderProgram);
+    copySSBO->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBO.comp");
+    copySSBO->link();
+    m_shaders["copyToSSBO"] = copySSBO;
+
+    std::ifstream f("shaders/copyToSSBO.comp");
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    Logger<std::string>::LogInfoI("=== SHADER SOURCE ===");
+    Logger<std::string>::LogInfoI(content);
+    Logger<std::string>::LogInfoI("=== END ===");
+
+    Logger<std::string>::LogInfoI("copyToSSBO shader loaded.");
 
 }
 

@@ -31,7 +31,7 @@ Viewer.featuresMaxDepth: 100
 #--------------------------------------------------------------------------------------------
 DirTrackParams.runDirectTracking: 0
 DirTrackParams.patchRadius:       3
-DirTrackParams.nLevels:           4
+DirTrackParams.nLevels:           8
 DirTrackParams.minUsed:         200
 DirTrackParams.trackCamIter:    6
 DirTrackParams.maxResidualPx:   0.1

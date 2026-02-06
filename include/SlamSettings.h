@@ -58,14 +58,22 @@ struct SlamSettings
 
 	struct DirectTrackingParams
 	{
+		int sourceImageWidth{640};
+		int sourceImageHeight{480};
+		float fx{535.4};
+		float fy{539.2};
+		float cx{320.1};
+		float cy{247.6};
+
+		int nLevels{8};
+		float scaleFactor{1.2f};
+
 		int runDirectTracking{1};
 		int patchRadius{4};
-		int nLevels{4};
 		int minUsed{200};
 		int trackCamIter{8};
 		float maxResidualPx{0.1f};
 		float maxDirectError{0.02f};
-		float scaleFactor{1.2f};
 		float minGrad{0.01};
 		float huberDelta{0.03f};
 		float kfDisplacement{0.5f};

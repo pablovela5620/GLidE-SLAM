@@ -3,7 +3,7 @@ precision highp float;
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(binding = 0) uniform highp sampler2D inputTexture;
+uniform highp sampler2D inputTexture;
 layout(binding = 1, r32f) writeonly uniform highp image2D outputImage;
 
 uniform ivec2 uDir; // (0,1) or (1,0)

@@ -892,9 +892,10 @@ class GPUCompute
 
     GPUCompute(){};
     void initialize(int w,int h,int levels,float scaleFactor, float fx, float fy, float cx, float cy);
-    bool setShaders(GLuint gauss8CHandle,GLuint gauss32FHandle, GLuint resizeHandle);
+    bool setShaders(GLuint gauss8CHandle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle);
     bool buildPyramid(cv::Mat image);
     bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
+    cv::Mat readbackTexture(GLuint texHandle, int w, int h);
     bool track(const cv::Mat& image, const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
     bool shutDown();
 
@@ -932,6 +933,11 @@ private:
     GLint m_blurDirectionUniform32F{-1};
     GLint m_inputTextureUniform8C{-1};
     GLint m_scaleFactorUniform{-1};
+
+    //TODO: Remove!
+    GLuint m_shaderCopySSBO{0};
+    GLint m_copyWidthUniform{-1};
+    GLuint m_readbackSSBO{0};
 };
 
 class Viewer
@@ -1105,6 +1111,9 @@ private:
     std::atomic<bool> m_pauseSimulation{false};
 
     bool m_isInitialized{false};
+    std::mutex m_sourceImageMutex;
+    cv::Mat m_sourceImage;
+    bool m_sourceImageAvailable{false};
 
     //Compute Shaders (Image Processing)
     GPUCompute* m_gpuCompute{nullptr};

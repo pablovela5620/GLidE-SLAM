@@ -1,0 +1,26 @@
+#version 310 es
+precision highp float;
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, r32f) readonly uniform highp image2D inputImage;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    float data[];
+};
+
+uniform int uWidth;
+
+void main()
+{
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz  = imageSize(inputImage);
+    if (pix.x >= sz.x || pix.y >= sz.y) return;
+
+    int idx = pix.y * uWidth + pix.x;
+
+    // DEBUG: uncomment next line to force constant 0.5 everywhere
+    // data[idx] = 0.5;
+
+    data[idx] = imageLoad(inputImage, pix).r;
+}
