@@ -18,21 +18,20 @@ void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, f
     initializeImagePyramids();
 }
 
-bool GPUCompute::setShaders(GLuint gauss8CHandle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle)
+bool GPUCompute::setShaders(GLuint convert8To32Handle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle)
 {
-    if (gauss8CHandle == 0 || gauss32FHandle == 0 || resizeHandle == 0 || copySSBOHandle == 0)
+    if (convert8To32Handle == 0 || gauss32FHandle == 0 || resizeHandle == 0 || copySSBOHandle == 0)
         return false;
 
-    m_shaderGauss8C = gauss8CHandle;
+    m_shaderConvert8UCTo32F = convert8To32Handle;
     m_shaderGauss32F = gauss32FHandle;
     m_shaderResize = resizeHandle;
     m_shaderCopySSBO = copySSBOHandle;
 
-    m_blurDirectionUniform8C = glGetUniformLocation(m_shaderGauss8C, "uDir");
     m_blurDirectionUniform32F = glGetUniformLocation(m_shaderGauss32F, "uDir");
-    m_inputTextureUniform8C = glGetUniformLocation(m_shaderGauss8C, "inputTexture");
     m_scaleFactorUniform = glGetUniformLocation(m_shaderResize, "uScaleFactor");
     m_copyWidthUniform = glGetUniformLocation(m_shaderCopySSBO, "uWidth");
+    m_convertInputTextureUniform = glGetUniformLocation(m_shaderConvert8UCTo32F, "inputTexture");
 
     // Create readback SSBO (size for largest level)
     glGenBuffers(1, &m_readbackSSBO);
@@ -53,32 +52,34 @@ void GPUCompute::initializeImagePyramids()
         m_levelHeight[i] = floor(((float)m_levelHeight[i - 1] / m_scaleFactor) + 0.5);
     }
 
-    //initialize and allocate image pyramid textures storage
-    m_pyrTexHandles.resize(m_nLevels);
-    glGenTextures(m_nLevels, m_pyrTexHandles.data());
 
-    //first image comes in as 8bit grayscale
-    glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[0]);
+    //First texture storage comes in as 8UC (red channel)
+    glGenTextures(1, &m_sourceTextureR8);
+    glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_R8, m_levelWidth[0], m_levelHeight[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    for (size_t L = 1; L < m_nLevels; ++L)
+    //initialize and allocate all image pyramid textures storage
+    m_pyrTexHandles.resize(m_nLevels);
+    glGenTextures(m_nLevels, m_pyrTexHandles.data());
+
+
+    for (size_t L = 0; L < m_nLevels; ++L)
     {
         glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[L]);
-
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
-
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    //initialize and allocate temporary and blur texturesstorage
-    m_tempTexHandles.resize(m_nLevels - 1);  // don't need one for last level
+
+    //initialize and allocate temporary and blur textures storage
+    m_tempTexHandles.resize(m_nLevels - 1);
     m_blurTexHandles.resize(m_nLevels - 1);
     glGenTextures(m_nLevels - 1, m_tempTexHandles.data());
     glGenTextures(m_nLevels - 1, m_blurTexHandles.data());
@@ -112,15 +113,19 @@ bool GPUCompute::buildPyramid(cv::Mat image)
 
     if (image.cols != m_levelWidth[0] || image.rows != m_levelHeight[0]) return false;
 
-    glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[0]);
+    if (m_sourceTextureR8 == 0) return false;
+    if ((int)m_pyrTexHandles.size() != m_nLevels) return false;
+    if ((int)m_tempTexHandles.size() != m_nLevels - 1) return false;
+    if ((int)m_blurTexHandles.size() != m_nLevels - 1) return false;
+
+    //Upload first 8 bit uchar texture
+    glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8);
 
     // For first image is 8bit (uchar).
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
     glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-
     glTexSubImage2D(GL_TEXTURE_2D,
                     0,
                     0, 0,
@@ -128,7 +133,6 @@ bool GPUCompute::buildPyramid(cv::Mat image)
                     GL_RED,
                     GL_UNSIGNED_BYTE,
                     image.ptr<uchar>());
-
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) std::cout << "texSubImage err: 0x" << std::hex << err << std::dec << std::endl;
 
@@ -136,6 +140,24 @@ bool GPUCompute::buildPyramid(cv::Mat image)
 
     auto ceilDiv = [](int a, int b) -> GLuint { return (GLuint)((a + (b - 1)) / b); };
 
+    // Convert R8 -> R32F into pyramid level 0
+    glUseProgram(m_shaderConvert8UCTo32F);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8);
+
+    glUniform1i(m_convertInputTextureUniform, 0);
+
+    glBindImageTexture(1, m_pyrTexHandles[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+    glDispatchCompute(ceilDiv(m_levelWidth[0], 16), ceilDiv(m_levelHeight[0], 16), 1);
+
+    err = glGetError();
+    if (err != GL_NO_ERROR) std::cout << "convert err: 0x" << std::hex << err << std::dec << std::endl;
+
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    // Build remaining pyramid levels (ALL 32F)
     for (int L = 1; L < m_nLevels; ++L)
     {
         const int srcW = m_levelWidth[L - 1];
@@ -143,25 +165,10 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         const int dstW = m_levelWidth[L];
         const int dstH = m_levelHeight[L];
 
-        if (L==1)
-        {
-            // Gauss Vertical blur (First pass, image is 8UC, needs conversion to 332F)
-            glUseProgram(m_shaderGauss8C);
-            glUniform2i(m_blurDirectionUniform8C, 0, 1);
-
-            // Bind as texture (sampler2D), not image
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[0]);
-            glUniform1i(m_inputTextureUniform8C, 0);
-        }
-        else
-        {
-            // Gauss Vertical blur
-            glUseProgram(m_shaderGauss32F);
-            glUniform2i(m_blurDirectionUniform32F, 0, 1);
-            glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
-        }
-
+        // Gauss Vertical blur
+        glUseProgram(m_shaderGauss32F);
+        glUniform2i(m_blurDirectionUniform32F, 0, 1);
+        glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
 
@@ -173,10 +180,8 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         // Gauss Horizontal blur
         glUseProgram(m_shaderGauss32F);
         glUniform2i(m_blurDirectionUniform32F, 1, 0);
-
         glBindImageTexture(0, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
-
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
 
         err = glGetError();
@@ -187,10 +192,8 @@ bool GPUCompute::buildPyramid(cv::Mat image)
         //Resize
         glUseProgram(m_shaderResize);
         glUniform1f(m_scaleFactorUniform, m_scaleFactor);
-
         glBindImageTexture(0, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
-
         glDispatchCompute(ceilDiv(dstW, 16), ceilDiv(dstH, 16), 1);
 
         err = glGetError();
@@ -200,6 +203,7 @@ bool GPUCompute::buildPyramid(cv::Mat image)
     }
 
     glUseProgram(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     //TODO: Remove, only for testing how similar to Opencv image pyramids
     std::vector<cv::Mat> m_pyrImg;
@@ -251,7 +255,10 @@ bool GPUCompute::buildPyramid(cv::Mat image)
 
             // Normalize to full 0-255 range so differences are visible
             cv::Mat diffVis;
-            diff.convertTo(diffVis, CV_8U, 255.0 / maxVal);
+            if (maxVal > 0.0)
+                diff.convertTo(diffVis, CV_8U, 255.0 / maxVal);
+            else
+                diffVis = cv::Mat::zeros(diff.size(), CV_8U);
 
             cv::imshow("Diff L" + std::to_string(L), diffVis);
         }
@@ -363,14 +370,15 @@ bool Viewer::initialize()
 
     m_gpuCompute->initialize(w, h, nLevels, scaleFactor,fx,fy,cx,cy);
 
-    auto &gaussShader8C = m_shaders.find("gaussShader8C")->second;
     auto &gaussShader32F = m_shaders.find("gaussShader32F")->second;
     auto &resizeShader = m_shaders.find("resizeShader")->second;
     auto &ssboShader = m_shaders.find("copyToSSBO")->second;
+    auto &convert8To32FShader = m_shaders.find("convert8UCTo32F")->second;
 
-    m_gpuCompute->setShaders(gaussShader8C->getHandle(),
+    m_gpuCompute->setShaders(convert8To32FShader->getHandle(),
         gaussShader32F->getHandle(),
-        resizeShader->getHandle(), ssboShader->getHandle());
+        resizeShader->getHandle(),
+        ssboShader->getHandle());
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     m_isInitialized = true;
@@ -1194,6 +1202,14 @@ void Viewer::initializeShaders()
 
     //compute shaders
     //image pyramid shaders, gauss resize
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> convert8UCTo32F = std::make_shared<Shader>();
+    convert8UCTo32F->setHandle(shaderProgram);
+    convert8UCTo32F->compile(GL_COMPUTE_SHADER, "shaders/convert8UCTo32F.comp");
+    convert8UCTo32F->link();
+    m_shaders["convert8UCTo32F"] = convert8UCTo32F;
+    Logger<std::string>::LogInfoI("convert8UCTo32F shader loaded.");
+
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> gaussShader8C = std::make_shared<Shader>();
     gaussShader8C->setHandle(shaderProgram);

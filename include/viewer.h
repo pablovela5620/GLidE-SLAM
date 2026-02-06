@@ -892,7 +892,7 @@ class GPUCompute
 
     GPUCompute(){};
     void initialize(int w,int h,int levels,float scaleFactor, float fx, float fy, float cx, float cy);
-    bool setShaders(GLuint gauss8CHandle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle);
+    bool setShaders(GLuint convert8To32Handle,GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle);
     bool buildPyramid(cv::Mat image);
     bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
@@ -925,16 +925,16 @@ private:
     float m_gaussSigma{1.0f};
 
     //pyramid shader handles
-    GLuint m_shaderGauss8C{0};
+    GLuint m_shaderConvert8UCTo32F{0};
     GLuint m_shaderGauss32F{0};
     GLuint m_shaderResize{0};
 
-    GLint m_blurDirectionUniform8C{-1};
     GLint m_blurDirectionUniform32F{-1};
-    GLint m_inputTextureUniform8C{-1};
     GLint m_scaleFactorUniform{-1};
+    GLint  m_convertInputTextureUniform{-1};
 
     //TODO: Remove!
+    GLuint m_sourceTextureR8{0};
     GLuint m_shaderCopySSBO{0};
     GLint m_copyWidthUniform{-1};
     GLuint m_readbackSSBO{0};
