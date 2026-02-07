@@ -123,6 +123,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 {
     bool success = true;
 
+    //handle map points
     if (m_ssboMapPoints == 0) return false;
     if (mapPoints.empty()) return false;
 
@@ -135,9 +136,15 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
 
 
+    //handle pose
+    glm::mat4 glmPose(1.0f);
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            glmPose[j][i] = pose.at<float>(i, j);
+    glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glmPose));
 
 
-    
+
     glDispatchCompute(...);
 
     return success;
@@ -1309,7 +1316,7 @@ void Viewer::initializeShaders()
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> convert8UCTo32F = std::make_shared<Shader>();
     convert8UCTo32F->setHandle(shaderProgram);
-    convert8UCTo32F->compile(GL_COMPUTE_SHADER, "shaders/convert8UCTo32F.comp");
+    convert8UCTo32F->compile(GL_COMPUTE_SHADER, "shaders/convert8UCTo32FShader.comp");
     convert8UCTo32F->link();
     m_shaders["convert8UCTo32F"] = convert8UCTo32F;
     Logger<std::string>::LogInfoI("convert8UCTo32F shader loaded.");
