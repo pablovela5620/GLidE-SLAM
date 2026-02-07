@@ -891,12 +891,13 @@ class GPUCompute
     public:
 
     GPUCompute(){};
-    void initialize(int w,int h,int levels,float scaleFactor, float fx, float fy, float cx, float cy);
+    void initialize(int w,int h,int levels, int patchSize, float scaleFactor,
+        float fx, float fy, float cx, float cy);
     bool setShaders(GLuint convert8To32Handle,GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle);
-    bool buildPyramid(cv::Mat image);
+    bool buildPyramid( cv::Mat& image);
     bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
-    bool track(const cv::Mat& image, const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
+    bool track(const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
     bool shutDown();
 
 private:
@@ -907,12 +908,12 @@ private:
     int m_width{0};
     int m_height{0};
     int m_nLevels{0};
+    int m_patchSize{0};
     float m_scaleFactor{1.0f};
     float m_fx{0.0f};
     float m_fy{0.0f};
     float m_cx{0.0f};
     float m_cy{0.0f};
-
 
     std::vector<GLuint> m_pyrTexHandles;
     std::vector<GLuint> m_tempTexHandles;
@@ -938,6 +939,13 @@ private:
     GLuint m_shaderCopySSBO{0};
     GLint m_copyWidthUniform{-1};
     GLuint m_readbackSSBO{0};
+
+
+
+    //precompute
+    glm::mat4 m_poseInitial{glm::mat4(1.0f)};
+    std::vector<glm::vec3> m_mapPoints;
+
 };
 
 class Viewer
@@ -985,8 +993,10 @@ public:
     void setPause() {m_pauseSimulation.store(true);}
     void setScaleFactor(const float scale) { m_scaleFactor = scale; }
 
-    void updateSourceImage(const cv::Mat& image);
+    void updateDirectFrame(const cv::Mat& image, const cv::Mat& pose);
+    void updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec3> mapPoints,const cv::Mat& pose);
 private:
+    void updateDirectTracking();
     void initializeWindows();
     void initializeProjectionMatrix();
     void initializeShaders();
@@ -1111,9 +1121,14 @@ private:
     std::atomic<bool> m_pauseSimulation{false};
 
     bool m_isInitialized{false};
-    std::mutex m_sourceImageMutex;
+    std::mutex m_directTrackingMutex;
     cv::Mat m_sourceImage;
-    bool m_sourceImageAvailable{false};
+    bool m_directTrackDataAvailable{false};
+    std::vector<glm::vec3> m_slamMapPoints;
+    cv::Mat m_initialPose;
+    bool m_runPrecompute{false};
+
+
 
     //Compute Shaders (Image Processing)
     GPUCompute* m_gpuCompute{nullptr};

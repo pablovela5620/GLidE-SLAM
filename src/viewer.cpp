@@ -4,12 +4,13 @@
 typedef void (*PFNGLGETBUFFERSUBDATAPROC)(GLenum, GLintptr, GLsizeiptr, void*);
 static PFNGLGETBUFFERSUBDATAPROC glGetBufferSubData = nullptr;
 
-void GPUCompute::initialize(int w,int h,int levels,float scaleFactor,float fx, float fy, float cx, float cy)
+void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFactor,float fx, float fy, float cx, float cy)
 {
     m_width = w;
     m_height = h;
-    m_scaleFactor = scaleFactor;
     m_nLevels = levels;
+    m_patchSize = patchSize;
+    m_scaleFactor = scaleFactor;
     m_fx = fx;
     m_fy = fy;
     m_cx = cx;
@@ -105,7 +106,7 @@ void GPUCompute::initializeImagePyramids()
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-bool GPUCompute::buildPyramid(cv::Mat image)
+bool GPUCompute::buildPyramid( cv::Mat& image)
 {
     //we want explicitly to have 8bit char
     if (image.type() != CV_8UC1) return false;
@@ -372,10 +373,13 @@ bool Viewer::initialize()
     const float cy = m_slamViewerSettings->directTrackParams.cy;
 
     const int nLevels = m_slamViewerSettings->directTrackParams.nLevels;
+    const int patchSize = m_slamViewerSettings->directTrackParams.patchSize;
     const float scaleFactor = m_slamViewerSettings->directTrackParams.scaleFactor;
 
 
-    m_gpuCompute->initialize(w, h, nLevels, scaleFactor,fx,fy,cx,cy);
+    //TODO: create a struct with all parameters
+    //TODO: Include also blur and other image processing specific parameters
+    m_gpuCompute->initialize(w, h, nLevels, patchSize, scaleFactor,fx,fy,cx,cy);
 
     auto &gaussShader32F = m_shaders.find("gaussShader32F")->second;
     auto &resizeShader = m_shaders.find("resizeShader")->second;
@@ -424,24 +428,8 @@ void Viewer::run()
         // }
 
 
-        cv::Mat img;
+        updateDirectTracking();
 
-        {
-            std::lock_guard<std::mutex> lock(m_sourceImageMutex);
-            if (m_sourceImageAvailable && m_gpuCompute != nullptr)
-            {
-                img = m_sourceImage;
-                m_sourceImageAvailable = false;
-            }
-        }
-
-        if (!img.empty())
-        {
-            ensureWindowContext(m_windowFrames2D->getDisplay(),
-                   m_windowFrames2D->getSurface(),
-                   m_windowFrames2D->getContext());
-            m_gpuCompute->buildPyramid(img);
-        }
 
 
         render();
@@ -452,13 +440,80 @@ void Viewer::run()
     }
 }
 
-void Viewer::updateSourceImage(const cv::Mat &image)
+void Viewer::updateDirectTracking()
 {
-    if (m_isInitialized)
+    cv::Mat img, pose;
+    std::vector<glm::vec3> pts;
+    bool doPrecompute = false;
+    bool doTrack = false;
+    float outB[6] = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,};
+    float outChi2 = 0.0f;
+    int outN = 0;
+
     {
-        std::lock_guard<std::mutex> lock(m_sourceImageMutex);
+        std::lock_guard<std::mutex> lock(m_directTrackingMutex);
+        if (m_directTrackDataAvailable && m_gpuCompute != nullptr)
+        {
+
+            img = m_sourceImage; //img points to specific address
+            pose = m_initialPose;
+
+            if (m_runPrecompute)
+            {
+                pts.swap(m_slamMapPoints);
+                m_runPrecompute = false;
+                doPrecompute = true;
+                doTrack = false;
+            }
+            else
+            {
+                doPrecompute = false;
+                doTrack = true;
+            }
+            m_directTrackDataAvailable = false;
+        }
+    }
+
+    if (!img.empty())
+    {
+        m_gpuCompute->buildPyramid(img);
+    }
+
+    if (doPrecompute)
+        m_gpuCompute->preCompute(pts, pose);
+    else if (doTrack)
+        m_gpuCompute->track(pose,outB,outChi2,outN);
+}
+
+void Viewer::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
+{
+    if (!m_isInitialized || m_gpuCompute== nullptr)
+        return;
+
+    {
+        std::lock_guard<std::mutex> lock(m_directTrackingMutex);
+
+        //avoid interrupt precompute (this should not happen anyway)
+        if (m_runPrecompute)
+            return;
+
         m_sourceImage = image.clone();
-        m_sourceImageAvailable = true;
+        m_initialPose = pose.clone();
+        m_directTrackDataAvailable = true;
+    }
+}
+
+void Viewer::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec3> mapPoints,const cv::Mat& pose)
+{
+    if (!m_isInitialized || m_gpuCompute== nullptr)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(m_directTrackingMutex);
+        m_sourceImage = image.clone();
+        m_slamMapPoints = std::move(mapPoints);
+        m_initialPose = pose.clone();
+        m_runPrecompute = true;
+        m_directTrackDataAvailable = true;
     }
 }
 

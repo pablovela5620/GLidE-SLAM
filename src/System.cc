@@ -518,18 +518,9 @@ bool System::ReadConfigFile(const std::string &path, SlamSettings *slamSettings)
     }
 
     //Direct tracking params
-    slamSettings->directTrackParams.runDirectTracking = fs["DirTrackParams.runDirectTracking"];
-    slamSettings->directTrackParams.patchRadius = fs["DirTrackParams.patchRadius"];
+    slamSettings->directTrackParams.patchSize = fs["DirTrackParams.patchSize"];
     slamSettings->directTrackParams.nLevels = fs["DirTrackParams.nLevels"];
-    slamSettings->directTrackParams.minUsed = fs["DirTrackParams.minUsed"];
-    slamSettings->directTrackParams.trackCamIter = fs["DirTrackParams.trackCamIter"];
-    slamSettings->directTrackParams.maxResidualPx = fs["DirTrackParams.maxResidualPx"];
-    slamSettings->directTrackParams.maxDirectError = fs["DirTrackParams.maxDirectError"];
     slamSettings->directTrackParams.scaleFactor = fs["DirTrackParams.scaleFactor"];
-    slamSettings->directTrackParams.minGrad = fs["DirTrackParams.minGrad"];
-    slamSettings->directTrackParams.huberDelta = fs["DirTrackParams.huberDelta"];
-    slamSettings->directTrackParams.kfDisplacement = fs["DirTrackParams.kfDisplacement"];
-    slamSettings->directTrackParams.kfMinFrames = fs["DirTrackParams.kfMinFrames"];
 
 
     //read in viewer slamSettings

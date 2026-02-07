@@ -66,18 +66,10 @@ struct SlamSettings
 		float cy{247.6};
 
 		int nLevels{8};
+		int patchSize{7};
 		float scaleFactor{1.2f};
 
-		int runDirectTracking{1};
-		int patchRadius{4};
-		int minUsed{200};
-		int trackCamIter{8};
-		float maxResidualPx{0.1f};
-		float maxDirectError{0.02f};
-		float minGrad{0.01};
-		float huberDelta{0.03f};
-		float kfDisplacement{0.5f};
-		int kfMinFrames{3};
+
 	}directTrackParams;
 
 };

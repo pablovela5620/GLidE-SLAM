@@ -30,14 +30,6 @@ Viewer.featuresMaxDepth: 100
 # Direct Tracking Parameters
 #--------------------------------------------------------------------------------------------
 DirTrackParams.runDirectTracking: 0
-DirTrackParams.patchRadius:       3
 DirTrackParams.nLevels:           8
-DirTrackParams.minUsed:         200
-DirTrackParams.trackCamIter:    6
-DirTrackParams.maxResidualPx:   0.1
-DirTrackParams.maxDirectError:   0.05
+DirTrackParams.patchSize:         7
 DirTrackParams.scaleFactor:     1.2
-DirTrackParams.minGrad:         0.01
-DirTrackParams.huberDelta:      0.03
-DirTrackParams.kfDisplacement: 0.20
-DirTrackParams.kfMinFrames:    5
