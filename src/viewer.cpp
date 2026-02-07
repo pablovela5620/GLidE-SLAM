@@ -17,6 +17,7 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     m_cy = cy;
 
     initializeImagePyramids();
+    initializePreCompute();
 }
 
 bool GPUCompute::setShaders(GLuint convert8To32Handle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle)
@@ -104,6 +105,42 @@ void GPUCompute::initializeImagePyramids()
 
 
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+bool GPUCompute::initializePreCompute()
+{
+    glGenBuffers(1, &m_ssboMapPoints);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    GLenum err = glGetError();
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER,0);
+
+
+    return err == GL_NO_ERROR;
+}
+
+bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
+{
+    bool success = true;
+
+    if (m_ssboMapPoints == 0) return false;
+    if (mapPoints.empty()) return false;
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+        mapPoints.size() * sizeof(glm::vec4),
+        mapPoints.data(),GL_DYNAMIC_DRAW);
+    GLenum err = glGetError();
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
+
+
+
+
+    
+    glDispatchCompute(...);
+
+    return success;
 }
 
 bool GPUCompute::buildPyramid( cv::Mat& image)
@@ -443,13 +480,18 @@ void Viewer::run()
 void Viewer::updateDirectTracking()
 {
     cv::Mat img, pose;
-    std::vector<glm::vec3> pts;
+    std::vector<glm::vec4> pts;
     bool doPrecompute = false;
     bool doTrack = false;
     float outB[6] = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,};
     float outChi2 = 0.0f;
     int outN = 0;
 
+    //use buffer copies:
+    //1-> producer writes to m_sourceImage (deep copy in update functionss using .clone()) -> buffer A
+    //2-> consumer does shallow copy img = m_sourceImage, shares buffer A (ref count)
+    //3-> if producer overwrites m_sourceImage (clone()), m_sourceImage points to buffer B
+    //while img still keeps buffer A alive.
     {
         std::lock_guard<std::mutex> lock(m_directTrackingMutex);
         if (m_directTrackDataAvailable && m_gpuCompute != nullptr)
@@ -503,7 +545,7 @@ void Viewer::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
     }
 }
 
-void Viewer::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec3> mapPoints,const cv::Mat& pose)
+void Viewer::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;

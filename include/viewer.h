@@ -895,7 +895,8 @@ class GPUCompute
         float fx, float fy, float cx, float cy);
     bool setShaders(GLuint convert8To32Handle,GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle);
     bool buildPyramid( cv::Mat& image);
-    bool preCompute(const std::vector<glm::vec3>& mapPoints, const cv::Mat& pose);
+    bool initializePreCompute();
+    bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
     bool track(const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
     bool shutDown();
@@ -944,7 +945,10 @@ private:
 
     //precompute
     glm::mat4 m_poseInitial{glm::mat4(1.0f)};
-    std::vector<glm::vec3> m_mapPoints;
+
+    GLuint m_ssboMapPoints{0};
+    size_t m_mapPointsCount{0};
+
 
 };
 
@@ -994,7 +998,7 @@ public:
     void setScaleFactor(const float scale) { m_scaleFactor = scale; }
 
     void updateDirectFrame(const cv::Mat& image, const cv::Mat& pose);
-    void updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec3> mapPoints,const cv::Mat& pose);
+    void updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose);
 private:
     void updateDirectTracking();
     void initializeWindows();
@@ -1124,7 +1128,9 @@ private:
     std::mutex m_directTrackingMutex;
     cv::Mat m_sourceImage;
     bool m_directTrackDataAvailable{false};
-    std::vector<glm::vec3> m_slamMapPoints;
+
+    //in GLSL SSBO (std430) alignment uses 16-byte vec4
+    std::vector<glm::vec4> m_slamMapPoints;
     cv::Mat m_initialPose;
     bool m_runPrecompute{false};
 
