@@ -20,20 +20,36 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     initializePreCompute();
 }
 
-bool GPUCompute::setShaders(GLuint convert8To32Handle, GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle)
+bool GPUCompute::setShaders(GLuint convert8To32Handle,
+    GLuint gauss32FHandle,
+    GLuint resizeHandle,
+    GLuint copySSBOHandle,
+    GLuint preComputeHandle)
 {
-    if (convert8To32Handle == 0 || gauss32FHandle == 0 || resizeHandle == 0 || copySSBOHandle == 0)
+    //make sure shader handles loaded
+    if (convert8To32Handle == 0 || gauss32FHandle == 0 || resizeHandle == 0 || copySSBOHandle == 0 || preComputeHandle == 0)
         return false;
 
-    m_shaderConvert8UCTo32F = convert8To32Handle;
-    m_shaderGauss32F = gauss32FHandle;
-    m_shaderResize = resizeHandle;
-    m_shaderCopySSBO = copySSBOHandle;
 
-    m_blurDirectionUniform32F = glGetUniformLocation(m_shaderGauss32F, "uDir");
-    m_scaleFactorUniform = glGetUniformLocation(m_shaderResize, "uScaleFactor");
-    m_copyWidthUniform = glGetUniformLocation(m_shaderCopySSBO, "uWidth");
-    m_convertInputTextureUniform = glGetUniformLocation(m_shaderConvert8UCTo32F, "inputTexture");
+    //set shader handles
+    m_convert8UCTo32FShader = convert8To32Handle;
+    m_gauss32FShader = gauss32FHandle;
+    m_resizeShader = resizeHandle;
+    m_copySSBOShader = copySSBOHandle;
+    m_preComputeShader = preComputeHandle;
+
+    //set shader uniforms (pyramid shader)
+    m_blurDirectionUniform32F = glGetUniformLocation(m_gauss32FShader, "uDir");
+    m_scaleFactorUniform = glGetUniformLocation(m_resizeShader, "uScaleFactor");
+    m_copyWidthUniform = glGetUniformLocation(m_copySSBOShader, "uWidth");
+    m_convertInputTextureUniform = glGetUniformLocation(m_convert8UCTo32FShader, "uInputTexture");
+
+    //set shader uniforms (precompute shader)
+    m_uCameraPoseUniform = glGetUniformLocation(m_preComputeShader, " uName");
+    m_uIntrinsicsUniform = glGetUniformLocation(m_preComputeShader, " uName");
+    m_uPatchSizeUniform = glGetUniformLocation(m_preComputeShader, " uName");
+    m_uNLevelsUniform = glGetUniformLocation(m_preComputeShader, " uName");
+
 
     // Create readback SSBO (size for largest level)
     glGenBuffers(1, &m_readbackSSBO);
@@ -136,6 +152,9 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
 
 
+    //load preCompute shader
+    glUseProgram(m_preComputeShader);
+
     //handle pose
     glm::mat4 glmPose(1.0f);
     for (int i = 0; i < 4; i++)
@@ -186,7 +205,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
     auto ceilDiv = [](int a, int b) -> GLuint { return (GLuint)((a + (b - 1)) / b); };
 
     // use shader to convert R8 -> R32F into pyramid level 0
-    glUseProgram(m_shaderConvert8UCTo32F);
+    glUseProgram(m_convert8UCTo32FShader);
     glActiveTexture(GL_TEXTURE0); //select texture unit 0
     glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8); //bind the texture to unit 0
     //stores the integer 0 into the sampler uniform, the shader reads from texture unit index 0.
@@ -213,7 +232,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
 
         // Gauss blur shader
         // Read from pyramidTexture Handle [L - 1] -> apply blur and write to tempTexture Handle [L-1]
-        glUseProgram(m_shaderGauss32F);
+        glUseProgram(m_gauss32FShader);
         glUniform2i(m_blurDirectionUniform32F, 0, 1); //set direction to vertical
         glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
@@ -227,7 +246,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
 
         // Gauss Horizontal blur
         // Read from tempTexture Handle [L - 1] -> apply blur and write to blurTexture Handle [L-1]
-        glUseProgram(m_shaderGauss32F);
+        glUseProgram(m_gauss32FShader);
         glUniform2i(m_blurDirectionUniform32F, 1, 0); //set direction to horizontal
         glBindImageTexture(0, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
@@ -241,7 +260,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
 
         //Resize
         // Read from blurTexture Handle [L - 1] -> apply resize and write to pyramid Texture Handle [L]
-        glUseProgram(m_shaderResize);
+        glUseProgram(m_resizeShader);
         glUniform1f(m_scaleFactorUniform, m_scaleFactor);
         glBindImageTexture(0, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
@@ -331,7 +350,7 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
     // IMPORTANT: shader uses layout(std430, binding = 1)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_readbackSSBO);
 
-    glUseProgram(m_shaderCopySSBO);
+    glUseProgram(m_copySSBOShader);
     glUniform1i(m_copyWidthUniform, w);
     glBindImageTexture(0, texHandle, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
 
@@ -1346,19 +1365,20 @@ void Viewer::initializeShaders()
     Logger<std::string>::LogInfoI("resize shader loaded.");
 
     shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> preComputeShader = std::make_shared<Shader>();
+    preComputeShader->setHandle(shaderProgram);
+    preComputeShader->compile(GL_COMPUTE_SHADER, "shaders/preComputeShader.comp");
+    preComputeShader->link();
+    m_shaders["preComputeShader"] = preComputeShader;
+    Logger<std::string>::LogInfoI("preComputeShader shader loaded.");
+
+    shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();
     copySSBO->setHandle(shaderProgram);
     copySSBO->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBO.comp");
     copySSBO->link();
     m_shaders["copyToSSBO"] = copySSBO;
 
-    std::ifstream f("shaders/copyToSSBO.comp");
-    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    Logger<std::string>::LogInfoI("=== SHADER SOURCE ===");
-    Logger<std::string>::LogInfoI(content);
-    Logger<std::string>::LogInfoI("=== END ===");
-
-    Logger<std::string>::LogInfoI("copyToSSBO shader loaded.");
 
 }
 

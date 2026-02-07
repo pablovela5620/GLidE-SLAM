@@ -893,7 +893,11 @@ class GPUCompute
     GPUCompute(){};
     void initialize(int w,int h,int levels, int patchSize, float scaleFactor,
         float fx, float fy, float cx, float cy);
-    bool setShaders(GLuint convert8To32Handle,GLuint gauss32FHandle, GLuint resizeHandle, GLuint copySSBOHandle);
+    bool setShaders(GLuint convert8To32Handle,
+        GLuint gauss32FHandle,
+        GLuint resizeHandle,
+        GLuint copySSBOHandle,
+        GLuint preComputeHandle);
     bool buildPyramid( cv::Mat& image);
     bool initializePreCompute();
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
@@ -927,17 +931,27 @@ private:
     float m_gaussSigma{1.0f};
 
     //pyramid shader handles
-    GLuint m_shaderConvert8UCTo32F{0};
-    GLuint m_shaderGauss32F{0};
-    GLuint m_shaderResize{0};
+    GLuint m_convert8UCTo32FShader{0};
+    GLuint m_gauss32FShader{0};
+    GLuint m_resizeShader{0};
 
+    //pyramid shader uniform handles
     GLint m_blurDirectionUniform32F{-1};
     GLint m_scaleFactorUniform{-1};
     GLint  m_convertInputTextureUniform{-1};
 
+    //preCompute and track shader handles
+    GLuint m_preComputeShader{0};
+
+    //preCompute shader uniform handles
+    GLint m_uCameraPoseUniform{-1};
+    GLint m_uIntrinsicsUniform{-1};
+    GLint m_uPatchSizeUniform{-1};
+    GLint m_uNLevelsUniform{-1};
+
     //TODO: Remove!
     GLuint m_sourceTextureR8{0};
-    GLuint m_shaderCopySSBO{0};
+    GLuint m_copySSBOShader{0};
     GLint m_copyWidthUniform{-1};
     GLuint m_readbackSSBO{0};
 
