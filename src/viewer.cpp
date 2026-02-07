@@ -139,7 +139,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 {
     bool success = true;
 
-    //handle map points
+    //load map points to SSBO
     if (m_ssboMapPoints == 0) return false;
     if (mapPoints.empty()) return false;
 
@@ -148,20 +148,33 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         mapPoints.size() * sizeof(glm::vec4),
         mapPoints.data(),GL_DYNAMIC_DRAW);
     GLenum err = glGetError();
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
-
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     //load preCompute shader
     glUseProgram(m_preComputeShader);
 
-    //handle pose
+    //connects buffer object to SSBO indexed binding slot
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
+
+
+    //convert pose from opencv -> glm (glsl)
     glm::mat4 glmPose(1.0f);
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++)
             glmPose[j][i] = pose.at<float>(i, j);
-    glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glmPose));
 
+    //write to shader uniforms
+    glUniformMatrix4fv(m_uCameraPoseUniform, 1, GL_FALSE, &glmPose[0][0]);
+    glUniform1i(m_uPatchSizeUniform, m_patchSize);
+
+    for (int L = 0; L < m_nLevels; ++L)
+    {
+        glUniform1i(m_uNLevelsUniform, L);
+        glUniform4f(m_uIntrinsicsUniform, m_fx , m_fy, m_cx, m_cy);
+
+
+
+    }
 
 
     glDispatchCompute(...);
@@ -444,15 +457,17 @@ bool Viewer::initialize()
     //TODO: Include also blur and other image processing specific parameters
     m_gpuCompute->initialize(w, h, nLevels, patchSize, scaleFactor,fx,fy,cx,cy);
 
-    auto &gaussShader32F = m_shaders.find("gaussShader32F")->second;
+    auto &gaussShader32F = m_shaders.find("gauss32FShader")->second;
     auto &resizeShader = m_shaders.find("resizeShader")->second;
-    auto &ssboShader = m_shaders.find("copyToSSBO")->second;
-    auto &convert8To32FShader = m_shaders.find("convert8UCTo32F")->second;
+    auto &ssboShader = m_shaders.find("copyToSSBOShader")->second;
+    auto &convert8To32FShader = m_shaders.find("convert8UCTo32FShader")->second;
+    auto &preComputeShader = m_shaders.find("preComputeShader")->second;
 
     m_gpuCompute->setShaders(convert8To32FShader->getHandle(),
         gaussShader32F->getHandle(),
         resizeShader->getHandle(),
-        ssboShader->getHandle());
+        ssboShader->getHandle(),
+        preComputeShader->getHandle());
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     m_isInitialized = true;
@@ -1343,7 +1358,7 @@ void Viewer::initializeShaders()
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> gaussShader8C = std::make_shared<Shader>();
     gaussShader8C->setHandle(shaderProgram);
-    gaussShader8C->compile(GL_COMPUTE_SHADER, "shaders/gaussShader8C.comp");
+    gaussShader8C->compile(GL_COMPUTE_SHADER, "shaders/gauss8CShader.comp");
     gaussShader8C->link();
     m_shaders["gaussShader8C"] = gaussShader8C;
     Logger<std::string>::LogInfoI("gauss 8C shader loaded.");
@@ -1351,7 +1366,7 @@ void Viewer::initializeShaders()
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> gaussShader32F = std::make_shared<Shader>();
     gaussShader32F->setHandle(shaderProgram);
-    gaussShader32F->compile(GL_COMPUTE_SHADER, "shaders/gaussShader32F.comp");
+    gaussShader32F->compile(GL_COMPUTE_SHADER, "shaders/gauss32FShader.comp");
     gaussShader32F->link();
     m_shaders["gaussShader32F"] = gaussShader32F;
     Logger<std::string>::LogInfoI("gauss 32 F shader loaded.");
@@ -1375,7 +1390,7 @@ void Viewer::initializeShaders()
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();
     copySSBO->setHandle(shaderProgram);
-    copySSBO->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBO.comp");
+    copySSBO->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBOShader.comp");
     copySSBO->link();
     m_shaders["copyToSSBO"] = copySSBO;
 
