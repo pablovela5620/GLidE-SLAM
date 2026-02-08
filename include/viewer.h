@@ -910,11 +910,16 @@ private:
 
 private:
 
-    int m_width{0};
-    int m_height{0};
-    int m_nLevels{0};
-    int m_patchSize{0};
+    size_t m_width{0};
+    size_t m_height{0};
+    size_t m_nLevels{0};
+    size_t m_patchSize{0};
+    size_t m_nPoints{0};
+    size_t m_patchArea{0};
+    size_t m_patchCenter{0};
+
     float m_scaleFactor{1.0f};
+    std::vector<float> m_invScaleFactors;
     float m_fx{0.0f};
     float m_fy{0.0f};
     float m_cx{0.0f};
@@ -935,33 +940,39 @@ private:
     GLuint m_gauss32FShader{0};
     GLuint m_resizeShader{0};
 
-    //pyramid shader uniform handles
-    GLint m_blurDirectionUniform32F{-1};
-    GLint m_scaleFactorUniform{-1};
-    GLint  m_convertInputTextureUniform{-1};
+    //pyramid shader uniform localtions
+    GLint m_uBlurDirectionUniform32F{-1};
+    GLint m_uScaleFactorUniform{-1};
+    GLint m_uInputTextureUniform{-1};
 
     //preCompute and track shader handles
     GLuint m_preComputeShader{0};
 
-    //preCompute shader uniform handles
-    GLint m_uCameraPoseUniform{-1};
+    //preCompute shader uniform locations
+    GLint m_uCamPoseUniform{-1};
     GLint m_uIntrinsicsUniform{-1};
     GLint m_uPatchSizeUniform{-1};
-    GLint m_uNLevelsUniform{-1};
+    GLint m_uLevelUniform{-1};
+    GLint m_uRefTextureUniform{-1};
+
+    //cache/data that is stored per level
+    struct PreComputeCache
+    {
+        GLuint ssbo_isValid= 0; // uint[N]
+        GLuint ssbo_I      = 0; // float[N * patch area]
+        GLuint ssbo_J      = 0; // float[N * patch area * 6]
+        GLuint ssbo_H      = 0; // float[N * 21] upper-triangle
+    };
+
+    std::vector<PreComputeCache> m_preComputeCache;
+    GLuint m_ssboMapPoints{0};
+    glm::mat4 m_poseInitial{glm::mat4(1.0f)};
 
     //TODO: Remove!
     GLuint m_sourceTextureR8{0};
     GLuint m_copySSBOShader{0};
     GLint m_copyWidthUniform{-1};
     GLuint m_readbackSSBO{0};
-
-
-
-    //precompute
-    glm::mat4 m_poseInitial{glm::mat4(1.0f)};
-
-    GLuint m_ssboMapPoints{0};
-    size_t m_mapPointsCount{0};
 
 
 };

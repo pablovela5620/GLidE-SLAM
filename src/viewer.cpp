@@ -10,11 +10,20 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     m_height = h;
     m_nLevels = levels;
     m_patchSize = patchSize;
+    m_patchCenter = (m_patchSize - 1) * 0.5f;
+    m_patchArea = m_patchSize * m_patchSize;
     m_scaleFactor = scaleFactor;
     m_fx = fx;
     m_fy = fy;
     m_cx = cx;
     m_cy = cy;
+
+    m_invScaleFactors.resize(m_nLevels);
+    m_invScaleFactors[0] = 1.0f;
+    for (int i = 1; i < m_nLevels; i++)
+    {
+        m_invScaleFactors[i] = 1.0f/(m_invScaleFactors[i - 1] * m_scaleFactor);
+    }
 
     initializeImagePyramids();
     initializePreCompute();
@@ -39,17 +48,18 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_preComputeShader = preComputeHandle;
 
     //set shader uniforms (pyramid shader)
-    m_blurDirectionUniform32F = glGetUniformLocation(m_gauss32FShader, "uDir");
-    m_scaleFactorUniform = glGetUniformLocation(m_resizeShader, "uScaleFactor");
+    m_uBlurDirectionUniform32F = glGetUniformLocation(m_gauss32FShader, "uDir");
+    m_uScaleFactorUniform = glGetUniformLocation(m_resizeShader, "uScaleFactor");
     m_copyWidthUniform = glGetUniformLocation(m_copySSBOShader, "uWidth");
-    m_convertInputTextureUniform = glGetUniformLocation(m_convert8UCTo32FShader, "uInputTexture");
+    m_uInputTextureUniform = glGetUniformLocation(m_convert8UCTo32FShader, "uInputTexture");
 
+    //TODO: Adjust uniform names in shader and correct here.
     //set shader uniforms (precompute shader)
-    m_uCameraPoseUniform = glGetUniformLocation(m_preComputeShader, " uName");
+    m_uCamPoseUniform = glGetUniformLocation(m_preComputeShader, " uName");
     m_uIntrinsicsUniform = glGetUniformLocation(m_preComputeShader, " uName");
     m_uPatchSizeUniform = glGetUniformLocation(m_preComputeShader, " uName");
-    m_uNLevelsUniform = glGetUniformLocation(m_preComputeShader, " uName");
-
+    m_uLevelUniform = glGetUniformLocation(m_preComputeShader, " uName");
+    m_uRefTextureUniform = glGetUniformLocation(m_preComputeShader, " uName");
 
     // Create readback SSBO (size for largest level)
     glGenBuffers(1, &m_readbackSSBO);
@@ -85,12 +95,14 @@ void GPUCompute::initializeImagePyramids()
     glGenTextures(m_nLevels, m_pyrTexHandles.data());
 
 
+    //because preCompute/track shaders need to perform bilinear-interpolation:
+    //sampling/filtering must be set to GL_LINEAR
     for (size_t L = 0; L < m_nLevels; ++L)
     {
         glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[L]);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
@@ -121,65 +133,6 @@ void GPUCompute::initializeImagePyramids()
 
 
     glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-bool GPUCompute::initializePreCompute()
-{
-    glGenBuffers(1, &m_ssboMapPoints);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-    GLenum err = glGetError();
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER,0);
-
-
-    return err == GL_NO_ERROR;
-}
-
-bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
-{
-    bool success = true;
-
-    //load map points to SSBO
-    if (m_ssboMapPoints == 0) return false;
-    if (mapPoints.empty()) return false;
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
-    glBufferData(GL_SHADER_STORAGE_BUFFER,
-        mapPoints.size() * sizeof(glm::vec4),
-        mapPoints.data(),GL_DYNAMIC_DRAW);
-    GLenum err = glGetError();
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    //load preCompute shader
-    glUseProgram(m_preComputeShader);
-
-    //connects buffer object to SSBO indexed binding slot
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
-
-
-    //convert pose from opencv -> glm (glsl)
-    glm::mat4 glmPose(1.0f);
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++)
-            glmPose[j][i] = pose.at<float>(i, j);
-
-    //write to shader uniforms
-    glUniformMatrix4fv(m_uCameraPoseUniform, 1, GL_FALSE, &glmPose[0][0]);
-    glUniform1i(m_uPatchSizeUniform, m_patchSize);
-
-    for (int L = 0; L < m_nLevels; ++L)
-    {
-        glUniform1i(m_uNLevelsUniform, L);
-        glUniform4f(m_uIntrinsicsUniform, m_fx , m_fy, m_cx, m_cy);
-
-
-
-    }
-
-
-    glDispatchCompute(...);
-
-    return success;
 }
 
 bool GPUCompute::buildPyramid( cv::Mat& image)
@@ -222,7 +175,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
     glActiveTexture(GL_TEXTURE0); //select texture unit 0
     glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8); //bind the texture to unit 0
     //stores the integer 0 into the sampler uniform, the shader reads from texture unit index 0.
-    glUniform1i(m_convertInputTextureUniform, 0); //input texture sample from unit 0
+    glUniform1i(m_uInputTextureUniform, 0); //input texture sample from unit 0
     //binds image pyramid [0] as image to image unit 1 (in shader: binding = 1)
     glBindImageTexture(1, m_pyrTexHandles[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
@@ -246,7 +199,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         // Gauss blur shader
         // Read from pyramidTexture Handle [L - 1] -> apply blur and write to tempTexture Handle [L-1]
         glUseProgram(m_gauss32FShader);
-        glUniform2i(m_blurDirectionUniform32F, 0, 1); //set direction to vertical
+        glUniform2i(m_uBlurDirectionUniform32F, 0, 1); //set direction to vertical
         glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
@@ -260,7 +213,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         // Gauss Horizontal blur
         // Read from tempTexture Handle [L - 1] -> apply blur and write to blurTexture Handle [L-1]
         glUseProgram(m_gauss32FShader);
-        glUniform2i(m_blurDirectionUniform32F, 1, 0); //set direction to horizontal
+        glUniform2i(m_uBlurDirectionUniform32F, 1, 0); //set direction to horizontal
         glBindImageTexture(0, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
@@ -274,7 +227,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         //Resize
         // Read from blurTexture Handle [L - 1] -> apply resize and write to pyramid Texture Handle [L]
         glUseProgram(m_resizeShader);
-        glUniform1f(m_scaleFactorUniform, m_scaleFactor);
+        glUniform1f(m_uScaleFactorUniform, m_scaleFactor);
         glBindImageTexture(0, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(dstW, 16), ceilDiv(dstH, 16), 1);
@@ -351,6 +304,156 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
     cv::waitKey(0);
     return true;
 }
+
+bool GPUCompute::initializePreCompute()
+{
+    //create (glGenBuffers)
+    //Input: map points
+
+    glGenBuffers(1, &m_ssboMapPoints);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER,0);
+    if (glGetError() != GL_NO_ERROR) return false;
+
+
+    //Output: One per level for every output of cache (SSBOs).
+    m_preComputeCache.resize(m_nLevels);
+
+    for (size_t L = 0; L < m_nLevels; ++L)
+    {
+        auto& cache = m_preComputeCache[L];
+
+        //1 buffer object, store it in cache
+        glGenBuffers(1, &cache.ssbo_isValid);
+        glGenBuffers(1, &cache.ssbo_I);
+        glGenBuffers(1, &cache.ssbo_J);
+        glGenBuffers(1, &cache.ssbo_H);
+
+        if (cache.ssbo_isValid == 0 || cache.ssbo_I == 0 || cache.ssbo_J == 0 || cache.ssbo_H == 0)
+            return false;
+
+        //create empty storage for now (allocation happens in actual preCompute function)
+        //Point valid or not
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_isValid);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 0,nullptr,GL_DYNAMIC_DRAW);
+
+        //Patch intensities
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_I);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 0,nullptr,GL_DYNAMIC_DRAW);
+
+        //Jacobians (each pixel wx,wy,wz,tx,ty,tz (camera pose) for each pixel in patch for every point
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_J);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+
+        //Hessians 6 x 6 (J^T*J), upper triangle form martix, 21)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_H);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+
+    }
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    return (glGetError() == GL_NO_ERROR);
+
+}
+
+bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
+{
+    //load map points to SSBO
+    if (m_ssboMapPoints == 0) return false;
+    if (mapPoints.empty()) return false;
+    if (m_nLevels == 0) return false;
+
+    m_nPoints = mapPoints.size();
+
+    //load preCompute shader
+    glUseProgram(m_preComputeShader);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+        mapPoints.size() * sizeof(glm::vec4),
+        mapPoints.data(),GL_DYNAMIC_DRAW);
+    GLenum err = glGetError();
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    //connects buffer object to SSBO indexed binding slot
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ssboMapPoints);
+
+
+    //convert pose from opencv -> glm (glsl)
+    glm::mat4 glmPose(1.0f);
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            glmPose[j][i] = pose.at<float>(i, j);
+
+    //write to shader uniforms
+    glUniformMatrix4fv(m_uCamPoseUniform, 1, GL_FALSE, &glmPose[0][0]);
+    glUniform1i(m_uPatchSizeUniform, m_patchSize);
+    glUniform1i(m_uRefTextureUniform,0); //input texture sample from unit 0
+
+    //main loop for precompute inverse-compositional
+    //course-to-fine here is actually irrelevant
+    for (int L = m_nLevels - 1; L >= 0; --L)
+    {
+        //Inputs:
+        //update level uniform
+        glUniform1i(m_uLevelUniform, L);
+
+        // update intrinsics (pre-scaled) uniforms
+        float fx = m_fx * m_invScaleFactors[L];
+        float fy = m_fy * m_invScaleFactors[L];
+        float cx = m_cx * m_invScaleFactors[L];
+        float cy = m_cy * m_invScaleFactors[L];
+        glUniform4f(m_uIntrinsicsUniform, fx , fy, cx, cy);
+
+        //bind image pyramid level
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[L]);
+
+
+        //Outputs:
+        //outputs pre level are written to cache
+        auto& cache = m_preComputeCache[L];
+
+        //Point valid or not
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_isValid);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * sizeof(uint32_t),nullptr,GL_DYNAMIC_DRAW);
+
+        //Patch intensities
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_I);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * m_patchArea * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
+
+        //Jacobians (each pixel wx,wy,wz,tx,ty,tz (camera pose) for each pixel in patch for every point
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_J);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * m_patchArea * 6 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+        //Hessians 6 x 6 (J^T*J), upper triangle form martix, 21)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_H);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * 21 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+        //connect buffer object to SSBO indexed binding slot(type of storage, slot number, buffer to access)
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cache.ssbo_isValid);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cache.ssbo_I);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cache.ssbo_J);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cache.ssbo_H);
+
+
+
+
+        glDispatchCompute(...);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+    }
+
+    glUseProgram(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    if (glGetError() != GL_NO_ERROR) return false;
+    return true;
+}
+
 
 
 cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
