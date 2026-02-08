@@ -910,12 +910,12 @@ private:
 
 private:
 
-    size_t m_width{0};
-    size_t m_height{0};
-    size_t m_nLevels{0};
-    size_t m_patchSize{0};
-    size_t m_nPoints{0};
-    size_t m_patchArea{0};
+    int m_width{0};
+    int m_height{0};
+    int m_nLevels{0};
+    int m_patchSize{0};
+    int m_nPoints{0};
+    int m_patchArea{0};
     float m_patchCenter{0.0f};
 
     float m_scaleFactor{1.0f};

@@ -74,7 +74,7 @@ void GPUCompute::initializeImagePyramids()
     m_levelHeight.resize(m_nLevels);
     m_levelWidth[0] = m_width;
     m_levelHeight[0] = m_height;
-    for (size_t i = 1; i < m_nLevels; i++)
+    for (int i = 1; i < m_nLevels; i++)
     {
         m_levelWidth[i] = floor(((float)m_levelWidth[i - 1] / m_scaleFactor) + 0.5);
         m_levelHeight[i] = floor(((float)m_levelHeight[i - 1] / m_scaleFactor) + 0.5);
@@ -97,7 +97,7 @@ void GPUCompute::initializeImagePyramids()
 
     //because preCompute/track shaders need to perform bilinear-interpolation:
     //sampling/filtering must be set to GL_LINEAR
-    for (size_t L = 0; L < m_nLevels; ++L)
+    for (int L = 0; L < m_nLevels; ++L)
     {
         glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[L]);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
@@ -114,7 +114,7 @@ void GPUCompute::initializeImagePyramids()
     glGenTextures(m_nLevels - 1, m_tempTexHandles.data());
     glGenTextures(m_nLevels - 1, m_blurTexHandles.data());
 
-    for (size_t L = 0; L < m_nLevels - 1; ++L)
+    for (int L = 0; L < m_nLevels - 1; ++L)
     {
         glBindTexture(GL_TEXTURE_2D, m_tempTexHandles[L]);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, m_levelWidth[L], m_levelHeight[L]);
@@ -320,7 +320,7 @@ bool GPUCompute::initializePreCompute()
     //Output: One per level for every output of cache (SSBOs).
     m_preComputeCache.resize(m_nLevels);
 
-    for (size_t L = 0; L < m_nLevels; ++L)
+    for (int L = 0; L < m_nLevels; ++L)
     {
         auto& cache = m_preComputeCache[L];
 
