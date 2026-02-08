@@ -22,7 +22,7 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     m_invScaleFactors[0] = 1.0f;
     for (int i = 1; i < m_nLevels; i++)
     {
-        m_invScaleFactors[i] = 1.0f/(m_invScaleFactors[i - 1] * m_scaleFactor);
+        m_invScaleFactors[i] = m_scaleFactor/(m_invScaleFactors[i - 1]);
     }
 
     initializeImagePyramids();
