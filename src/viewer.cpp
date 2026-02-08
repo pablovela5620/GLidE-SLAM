@@ -48,7 +48,7 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_preComputeShader = preComputeHandle;
 
     //set shader uniforms (pyramid shader)
-    m_uBlurDirectionUniform32F = glGetUniformLocation(m_gauss32FShader, "uDir");
+    m_uBlurDirectionUniform32F = glGetUniformLocation(m_gauss32FShader, "uDirection");
     m_uScaleFactorUniform = glGetUniformLocation(m_resizeShader, "uScaleFactor");
     m_copyWidthUniform = glGetUniformLocation(m_copySSBOShader, "uWidth");
     m_uInputTextureUniform = glGetUniformLocation(m_convert8UCTo32FShader, "uInputTexture");
@@ -61,6 +61,7 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uLevelUniform = glGetUniformLocation(m_preComputeShader, " uName");
     m_uRefTextureUniform = glGetUniformLocation(m_preComputeShader, " uName");
 
+    //used for debugging (compare image pyramids)
     // Create readback SSBO (size for largest level)
     glGenBuffers(1, &m_readbackSSBO);
 
