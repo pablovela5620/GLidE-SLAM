@@ -22,7 +22,7 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     m_invScaleFactors[0] = 1.0f;
     for (int i = 1; i < m_nLevels; i++)
     {
-        m_invScaleFactors[i] = m_scaleFactor/(m_invScaleFactors[i - 1]);
+        m_invScaleFactors[i] = (m_invScaleFactors[i - 1]/m_scaleFactor);
     }
 
     initializeImagePyramids();
@@ -55,11 +55,12 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
 
     //TODO: Adjust uniform names in shader and correct here.
     //set shader uniforms (precompute shader)
-    m_uCamPoseUniform = glGetUniformLocation(m_preComputeShader, " uName");
-    m_uIntrinsicsUniform = glGetUniformLocation(m_preComputeShader, " uName");
-    m_uPatchSizeUniform = glGetUniformLocation(m_preComputeShader, " uName");
-    m_uLevelUniform = glGetUniformLocation(m_preComputeShader, " uName");
-    m_uRefTextureUniform = glGetUniformLocation(m_preComputeShader, " uName");
+    m_uCamPoseUniform = glGetUniformLocation(m_preComputeShader, "uPose");
+    m_uIntrinsicsUniform = glGetUniformLocation(m_preComputeShader, "uK");
+    m_uPatchSizeUniform = glGetUniformLocation(m_preComputeShader, "uPatchSize");
+    m_uLevelUniform = glGetUniformLocation(m_preComputeShader, "uLevel");
+    m_uNpointsUniform    = glGetUniformLocation(m_preComputeShader, "uNPoints");
+    m_uRefTextureUniform = glGetUniformLocation(m_preComputeShader, "uRefTexture");
 
     //used for debugging (compare image pyramids)
     // Create readback SSBO (size for largest level)
@@ -240,6 +241,9 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     }
 
+    //keeps pyramid-building safe internally, makes the final pyramid textures safe to sample in your preCompute/track shader
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+
     glUseProgram(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -390,6 +394,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     //write to shader uniforms
     glUniformMatrix4fv(m_uCamPoseUniform, 1, GL_FALSE, &glmPose[0][0]);
     glUniform1i(m_uPatchSizeUniform, m_patchSize);
+    glUniform1i(m_uNpointsUniform, (GLint)m_nPoints);
     glUniform1i(m_uRefTextureUniform,0); //input texture sample from unit 0
 
     //main loop for precompute inverse-compositional
@@ -441,9 +446,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cache.ssbo_H);
 
 
-
-
-        glDispatchCompute(...);
+        glDispatchCompute((m_nPoints + 63) / 64, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
     }
@@ -452,6 +455,12 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     glBindTexture(GL_TEXTURE_2D, 0);
 
     if (glGetError() != GL_NO_ERROR) return false;
+
+    //readback values and reduce per-point Hessians into one Hessian per level.
+
+
+
+
     return true;
 }
 

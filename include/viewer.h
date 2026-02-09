@@ -914,7 +914,7 @@ private:
     int m_height{0};
     int m_nLevels{0};
     int m_patchSize{0};
-    int m_nPoints{0};
+    uint32_t m_nPoints{0};
     int m_patchArea{0};
     float m_patchCenter{0.0f};
 
@@ -954,6 +954,7 @@ private:
     GLint m_uPatchSizeUniform{-1};
     GLint m_uLevelUniform{-1};
     GLint m_uRefTextureUniform{-1};
+    GLint m_uNpointsUniform{-1};
 
     //cache/data that is stored per level
     struct PreComputeCache

@@ -16,13 +16,15 @@ uniform mat4  uPose;             //camera pose
 uniform vec4  uK;                //intrinsics (pre-scaled for each level)
 uniform int   uPatchSize;        //size of patch
 uniform int   uLevel;            //current level being processed
+uniform int   uNPoints;         //the number of map points
 uniform sampler2D uRefTexture;  //current level image pyramid
 
 //SSBO bindings (std430 -> standard for SSBOs for alignment of types:
 //vec4 16 bytes, uint 4 bytes, float 4 bytes...
-//Declare SSBO at slot 1,2,3... contains array ot type vec4/uint/float... buffer handle name
+//Declare SSBO at slot 1,2,3... contains array ot type vec4/uint/float...
+//buffer handle/block name, member of type, and the named variable to access in code
 //access by bufferName.member[i]. ->PointsBuffer.pos[i];
-layout(std430, binding = 0) readonly  buffer PointsBuffer       {vec4 pos[];   } inMapPoints;
+layout(std430, binding = 0) readonly  buffer PointsBuffer       {vec4 pos[];  } inMapPoints;
 layout(std430, binding = 1) writeonly buffer ValidBuffer        {uint Valid[];} outValid;
 layout(std430, binding = 2) writeonly buffer IBuffer            {float IRef[];} outI;
 layout(std430, binding = 3) writeonly buffer JBuffer            {float J[];   } outJ;
@@ -54,12 +56,12 @@ void main()
     uint ptIndex = gl_GlobalInvocationID.x;
 
     //check invocation overflow
-    if(ptIndex >= uint(PointsBuffer.pos.length()))
+    if(ptIndex >= uint(uNPoints))
         return;
 
 
-    vec4 ptPos = PointsBuffer.pos[ptIndex];   //world pos
-    vec4 ptPosCam = ptPos * uPose;          //wrt to camera
+    vec4 ptPos = inMapPoints.pos[ptIndex];   //world pos
+    vec4 ptPosCam = uPose * ptPos;          //wrt to camera
     float X = ptPosCam.x;
     float Y = ptPosCam.y;
     float Z = ptPosCam.z;
@@ -67,7 +69,7 @@ void main()
     //check point behind camera
     if(Z <= 0.0)
     {
-        outValid[ptIndex] = 0u;
+        outValid.Valid[ptIndex] = 0u;
         return;
     }
 
@@ -87,18 +89,81 @@ void main()
     //check if out-of-bounds
     float patchCenter = float(uPatchSize - 1) * 0.5;
     float border      = patchCenter + 2.0;
-    if((u < border) || ( v < border) || (u >= (width - border)) || (v >= (height - boder)))
+    if((u < border) || ( v < border) || (u >= (width - border)) || (v >= (height - border)))
     {
-        outValid[ptIndex] = 0u;
+        outValid.Valid[ptIndex] = 0u;
         return;
     }
 
-    outValid[ptIndex] = 1u;
+    outValid.Valid[ptIndex] = 1u;
 
     int patchArea = uPatchSize * uPatchSize;
 
     //set starting index (1D arrays)
-    uint Ibase = ptIndex * uint(patchArea); //starting index Intensities
+    uint IBase = ptIndex * uint(patchArea); //starting index Intensities
     uint Hbase = ptIndex * 21u; //starting index Hessians
+
+    //create Hessian matrix and clear all elements
+    float H[21];
+    for(int i = 0; i < 21; ++i) H[i] = 0.0;
+
+
+    //used for jacobian
+    float invZ = 1.0 / Z;
+    float invZ2 = invZ *  invZ;
+
+    //Patch processing
+    for (int k = 0; k < patchArea; ++k)
+    {
+        int dx = k % uPatchSize;
+        int dy = k / uPatchSize;
+
+        //the patch is centered at the point, so need to offset from center
+        float uk = u + float(dx) - patchCenter;
+        float vk = v + float(dy) - patchCenter;
+
+        //sample reference image intensity
+        float I = bilinearSample(uk,vk);
+
+        //compute gradient
+        //horizontal and vertical gradients
+        float gx = 0.5 * (bilinearSample(uk + 1.0, vk) - bilinearSample(uk - 1.0, vk));
+        float gy = 0.5 * (bilinearSample(uk, vk + 1.0) - bilinearSample(uk, vk - 1.0));
+
+        //write to output pixel intensity
+        outI.IRef[IBase + uint(k)] = I;
+
+        //build Jacobian matrix
+        float J0 = gx * fx * invZ;
+        float J1 = gy * fy * invZ;
+        float J2 = -(gx * fx * X + gy * fy * Y) * invZ2;
+        float J3 = -gx * fx * X * Y * invZ2 - gy * fy * (1.0 + Y * Y * invZ2);
+        float J4 =  gx * fx * (1.0 + X * X * invZ2) + gy * fy * X * Y * invZ2;
+        float J5 = (-gx * fx * Y + gy * fy * X) * invZ;
+
+        //write to output, goes as a pack of 6 values, therefore stride 6
+        uint JBase = (IBase + uint(k)) * 6u;
+        outJ.J[JBase + 0u] = J0;
+        outJ.J[JBase + 1u] = J1;
+        outJ.J[JBase + 2u] = J2;
+        outJ.J[JBase + 3u] = J3;
+        outJ.J[JBase + 4u] = J4;
+        outJ.J[JBase + 5u] = J5;
+
+        float J[6];
+        J[0] = J0;
+        J[1] = J1;
+        J[2] = J2;
+        J[3] = J3;
+        J[4] = J4;
+        J[5] = J5;
+
+        for (int a = 0; a < 6; ++a)
+            for (int b = a; b < 6; ++b)
+                H[matrixTriangleIndex(a,b)] += J[a] * J[b];
+    }
+
+    for(int i = 0; i < 21; ++i)
+    outH.H[Hbase + uint(i)] = H[i];
 
 }
