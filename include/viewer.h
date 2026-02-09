@@ -912,6 +912,7 @@ private:
 
 private:
 
+    size_t m_maxPoints{1024};
     int m_width{0};
     int m_height{0};
     int m_nLevels{0};
@@ -959,6 +960,8 @@ private:
     GLint m_uLevelUniform{-1};
     GLint m_uRefTextureUniform{-1};
     GLint m_uNpointsUniform{-1};
+    GLint m_uReduce1NptsUniform{-1};
+    GLint m_uReduce2NGroupsUniform{-1};
 
     //cache/data that is stored per level
     struct PreComputeCache
@@ -970,9 +973,6 @@ private:
 
         GLuint ssbo_Hpartial = 0;  // float[numGroups * 21]
         GLuint ssbo_Hlevel   = 0;  // float[21]
-        GLuint ssbo_NvalidPartial = 0; // optional uint[numGroups]
-        GLuint ssbo_NvalidLevel   = 0; //optional uint[1]
-
     };
 
     std::vector<PreComputeCache> m_preComputeCache;

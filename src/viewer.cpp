@@ -69,6 +69,8 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uLevelUniform = glGetUniformLocation(m_preComputeShader, "uLevel");
     m_uNpointsUniform    = glGetUniformLocation(m_preComputeShader, "uNPoints");
     m_uRefTextureUniform = glGetUniformLocation(m_preComputeShader, "uRefTexture");
+    m_uReduce1NptsUniform = glGetUniformLocation(m_reduceHPass1Shader, "uNPoints");
+    m_uReduce2NGroupsUniform = glGetUniformLocation(m_reduceHPass2Shader, "uNGroups");
 
     //used for debugging (compare image pyramids)
     // Create readback SSBO (size for largest level)
@@ -320,12 +322,13 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
 
 bool GPUCompute::initializePreCompute()
 {
-    //create (glGenBuffers)
-    //Input: map points
+    // This function generates pre-allocates buffers. The capacity is set to max. n. of points (parameter)
+    // this avoids allocating new buffers every frame.
 
+    //Input buffer: map points allocate space for max. n of points
     glGenBuffers(1, &m_ssboMapPoints);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,  (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER,0);
     if (glGetError() != GL_NO_ERROR) return false;
 
@@ -335,34 +338,62 @@ bool GPUCompute::initializePreCompute()
 
     for (int L = 0; L < m_nLevels; ++L)
     {
-        auto& cache = m_preComputeCache[L];
+        auto& cacheLevel = m_preComputeCache[L];
 
         //1 buffer object, store it in cache
-        glGenBuffers(1, &cache.ssbo_isValid);
-        glGenBuffers(1, &cache.ssbo_I);
-        glGenBuffers(1, &cache.ssbo_J);
-        glGenBuffers(1, &cache.ssbo_H);
+        glGenBuffers(1, &cacheLevel.ssbo_isValid);
+        glGenBuffers(1, &cacheLevel.ssbo_I);
+        glGenBuffers(1, &cacheLevel.ssbo_J);
+        glGenBuffers(1, &cacheLevel.ssbo_H);
 
-        if (cache.ssbo_isValid == 0 || cache.ssbo_I == 0 || cache.ssbo_J == 0 || cache.ssbo_H == 0)
+        glGenBuffers(1,&cacheLevel.ssbo_Hpartial);
+        glGenBuffers(1,&cacheLevel.ssbo_Hlevel);
+
+        if (cacheLevel.ssbo_isValid == 0
+            || cacheLevel.ssbo_I == 0
+            || cacheLevel.ssbo_J == 0
+            || cacheLevel.ssbo_H == 0
+            || cacheLevel.ssbo_Hpartial == 0
+            || cacheLevel.ssbo_Hlevel == 0)
             return false;
 
-        //create empty storage for now (allocation happens in actual preCompute function)
-        //Point valid or not
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_isValid);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, 0,nullptr,GL_DYNAMIC_DRAW);
+        //Shader buffers used in preCompute
+        //Point valid or not (size of map points)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValid);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(uint32_t)), nullptr, GL_DYNAMIC_DRAW);
 
-        //Patch intensities
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_I);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, 0,nullptr,GL_DYNAMIC_DRAW);
+        //Patch intensities (size of map points *  patch area, i.e. number of pixels in patch)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_I);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * (uint32_t)m_patchArea * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
 
-        //Jacobians (each pixel wx,wy,wz,tx,ty,tz (camera pose) for each pixel in patch for every point
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_J);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+        //Jacobians (each pixel contributes 6 values, wx,wy,wz,tx,ty,tz (camera pose) per patch for every point
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_J);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * (uint32_t)m_patchArea * 6u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
 
-        //Hessians 6 x 6 (J^T*J), upper triangle form martix, 21)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_H);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+        //Hessians 6 x 6 (J^T*J), upper triangle from matrix, 21 values) per point
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_H);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * 21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
 
+
+        //Reduction buffers
+        //1) First-pass: we want to sum up the Hessian from every point from same workgroup in 1st pass
+        //2) Second-pass: we want to sum up the Hessian from workgroup giving final Hessian
+        //256 threads running 4 points per thread
+        const int nThreads = 256;
+        const int pointsPerThread = 4;
+        const int pointsPerGroup = nThreads * pointsPerThread; // 1024
+
+        const int numGroups = (m_maxPoints + pointsPerGroup - 1) / pointsPerGroup;
+        //reduction shader buffers
+        //partial reduces to 21 values (half-Hessian) per workgroup, so allocate n workgroup * 21
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Hpartial);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(numGroups * 21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+
+        //final level are 21 values (half-Hessian)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Hlevel);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -372,9 +403,8 @@ bool GPUCompute::initializePreCompute()
 
 bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
 {
-    //load map points to SSBO
     if (m_ssboMapPoints == 0) return false;
-    if (mapPoints.empty()) return false;
+    if (mapPoints.empty() || mapPoints.size() > m_maxPoints) return false;
     if (m_nLevels == 0) return false;
 
     m_nPoints = mapPoints.size();
@@ -382,11 +412,12 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     //load preCompute shader
     glUseProgram(m_preComputeShader);
 
+    //only update map points data (glBufferSubData)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssboMapPoints);
-    glBufferData(GL_SHADER_STORAGE_BUFFER,
-        mapPoints.size() * sizeof(glm::vec4),
-        mapPoints.data(),GL_DYNAMIC_DRAW);
-    GLenum err = glGetError();
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+        0,
+        m_nPoints * sizeof(glm::vec4),
+        mapPoints.data());
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     //connects buffer object to SSBO indexed binding slot
@@ -400,6 +431,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
             glmPose[j][i] = pose.at<float>(i, j);
 
     //write to shader uniforms
+    //uLevel and intrinsics uniforms are level-dependent, so they are set in loop
     glUniformMatrix4fv(m_uCamPoseUniform, 1, GL_FALSE, &glmPose[0][0]);
     glUniform1i(m_uPatchSizeUniform, m_patchSize);
     glUniform1i(m_uNpointsUniform, (GLint)m_nPoints);
@@ -424,95 +456,64 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_pyrTexHandles[L]);
 
-
-        //Outputs:
-        //outputs pre level are written to cache
-        auto& cache = m_preComputeCache[L];
-
-        //Point valid or not
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_isValid);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * sizeof(uint32_t),nullptr,GL_DYNAMIC_DRAW);
-
-        //Patch intensities
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_I);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * m_patchArea * sizeof(float),nullptr,GL_DYNAMIC_DRAW);
-
-        //Jacobians (each pixel wx,wy,wz,tx,ty,tz (camera pose) for each pixel in patch for every point
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_J);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * m_patchArea * 6 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-
-        //Hessians 6 x 6 (J^T*J), upper triangle form martix, 21)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_H);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_nPoints * 21 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        auto& cacheLevel = m_preComputeCache[L];
 
         //connect buffer object to SSBO indexed binding slot(type of storage, slot number, buffer to access)
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cache.ssbo_isValid);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cache.ssbo_I);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cache.ssbo_J);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cache.ssbo_H);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cacheLevel.ssbo_isValid);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cacheLevel.ssbo_I);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cacheLevel.ssbo_J);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cacheLevel.ssbo_H);
 
-
+        //launch precompute shader
         glDispatchCompute((m_nPoints + 63) / 64, 1, 1);
+
+        //wait for completion
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
 
-        //Second-pass: Reduce H:
-        //1)Sum all hessians per-point from same workgroup
-        //2)Sum all hessians from different workgroups (previous step)
-        if (m_reduceHPass1Shader != 0 && m_reduceHPass2Shader != 0 &&
-            cache.ssbo_Hpartial != 0 && cache.ssbo_Hlevel != 0)
-        {
-            const int LOCAL = 256;               // must match reduceHPass1.comp local_size_x
-            const int ITEMS_PER_THREAD = 4;      // must match reduceHPass1.comp (points per thread)
-            const int POINTS_PER_GROUP = LOCAL * ITEMS_PER_THREAD; // 1024
+        //Second-phase: Reduce H:
+        //1)First-pass: Sum all hessians per-point from same workgroup
+        //2)Second-pass: Sum all hessians from different workgroups (previous step)
 
-            const int numGroups = (m_nPoints + POINTS_PER_GROUP - 1) / POINTS_PER_GROUP;
+        //1) 256 threads running 4 points per thread
+        const int nThreads = 256;
+        const int pointsPerThread = 4;
+        const int pointsPerGroup = nThreads * pointsPerThread; // 1024
 
-            // allocate partial + final buffers for THIS level
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_Hpartial);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, (size_t)numGroups * 21u * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        const int numGroups = (m_nPoints + pointsPerGroup - 1) / pointsPerGroup;
 
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_Hlevel);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, 21u * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        // PASS 1: Sum per-point partial
+        glUseProgram(m_reduceHPass1Shader);
 
-            // PASS 1: per-point -> partial
-            glUseProgram(m_reduceHPass1Shader);
+        glUniform1i(m_uReduce1NptsUniform, (GLint)m_nPoints);
 
-            GLint uNPointsLoc1 = glGetUniformLocation(m_reduceHPass1Shader, "uNPoints");
-            if (uNPointsLoc1 >= 0) glUniform1i(uNPointsLoc1, (GLint)m_nPoints);
+        //connect buffer object to SSBO indexed binding slot(type of storage, slot number, buffer to access)
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cacheLevel.ssbo_isValid);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cacheLevel.ssbo_H);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_Hpartial);
 
-            // inputs already exist: binding=1 valid[], binding=4 Hi[]
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cache.ssbo_isValid);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cache.ssbo_H);
+        //launch 1st pass reduction shader
+        glDispatchCompute((GLuint)numGroups, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-            // output: binding=5 partialHi[]
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cache.ssbo_Hpartial);
 
-            glDispatchCompute((GLuint)numGroups, 1, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        // PASS 2: partial per level 21 values
+        glUseProgram(m_reduceHPass2Shader);
 
-            // PASS 2: partial -> one H_level[21]
-            glUseProgram(m_reduceHPass2Shader);
+        glUniform1i(m_uReduce2NGroupsUniform, (GLint)numGroups);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_Hpartial);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cacheLevel.ssbo_Hlevel);
 
-            GLint uNGroupsLoc2 = glGetUniformLocation(m_reduceHPass2Shader, "uNGroups");
-            if (uNGroupsLoc2 >= 0) glUniform1i(uNGroupsLoc2, (GLint)numGroups);
+        //launch 2nd pass reduction shader
+        glDispatchCompute(1, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-            // input: binding=5 partialHi[]
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cache.ssbo_Hpartial);
+        glUseProgram(0);
 
-            // output: binding=6 H_level[21]
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cache.ssbo_Hlevel);
+        // switch back for next level's precompute
+        glUseProgram(m_preComputeShader);
 
-            glDispatchCompute(1, 1, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-            // switch back for next level's precompute
-            glUseProgram(m_preComputeShader);
-        }
     }
 
 
@@ -520,11 +521,6 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     glBindTexture(GL_TEXTURE_2D, 0);
 
     if (glGetError() != GL_NO_ERROR) return false;
-
-    //readback values and reduce per-point Hessians into one Hessian per level.
-
-
-
 
     return true;
 }
@@ -640,12 +636,18 @@ bool Viewer::initialize()
     auto &ssboShader = m_shaders.find("copyToSSBOShader")->second;
     auto &convert8To32FShader = m_shaders.find("convert8UCTo32FShader")->second;
     auto &preComputeShader = m_shaders.find("preComputeShader")->second;
+    auto &reduceH1PassShader = m_shaders.find("reduceH1PassShader")->second;
+    auto &reduceH2PassShader = m_shaders.find("reduceH2PassShader")->second;
+
+    //TODO: check that all shader handles are NOT null
 
     m_gpuCompute->setShaders(convert8To32FShader->getHandle(),
         gaussShader32F->getHandle(),
         resizeShader->getHandle(),
         ssboShader->getHandle(),
-        preComputeShader->getHandle());
+        preComputeShader->getHandle(),
+        reduceH1PassShader->getHandle(),
+        reduceH2PassShader->getHandle());
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     m_isInitialized = true;
