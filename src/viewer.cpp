@@ -33,10 +33,18 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     GLuint gauss32FHandle,
     GLuint resizeHandle,
     GLuint copySSBOHandle,
-    GLuint preComputeHandle)
+    GLuint preComputeHandle,
+    GLuint reduceH1passHandle,
+    GLuint reduceH2passHandle)
 {
     //make sure shader handles loaded
-    if (convert8To32Handle == 0 || gauss32FHandle == 0 || resizeHandle == 0 || copySSBOHandle == 0 || preComputeHandle == 0)
+    if (convert8To32Handle == 0
+        || gauss32FHandle == 0
+        || resizeHandle == 0
+        || copySSBOHandle == 0
+        || preComputeHandle == 0
+        || reduceH1passHandle == 0
+        || reduceH2passHandle == 0)
         return false;
 
 
@@ -449,7 +457,64 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         glDispatchCompute((m_nPoints + 63) / 64, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
+
+        //Second-pass: Reduce H:
+        //1)Sum all hessians per-point from same workgroup
+        //2)Sum all hessians from different workgroups (previous step)
+        if (m_reduceHPass1Shader != 0 && m_reduceHPass2Shader != 0 &&
+            cache.ssbo_Hpartial != 0 && cache.ssbo_Hlevel != 0)
+        {
+            const int LOCAL = 256;               // must match reduceHPass1.comp local_size_x
+            const int ITEMS_PER_THREAD = 4;      // must match reduceHPass1.comp (points per thread)
+            const int POINTS_PER_GROUP = LOCAL * ITEMS_PER_THREAD; // 1024
+
+            const int numGroups = (m_nPoints + POINTS_PER_GROUP - 1) / POINTS_PER_GROUP;
+
+            // allocate partial + final buffers for THIS level
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_Hpartial);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, (size_t)numGroups * 21u * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, cache.ssbo_Hlevel);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, 21u * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+            // PASS 1: per-point -> partial
+            glUseProgram(m_reduceHPass1Shader);
+
+            GLint uNPointsLoc1 = glGetUniformLocation(m_reduceHPass1Shader, "uNPoints");
+            if (uNPointsLoc1 >= 0) glUniform1i(uNPointsLoc1, (GLint)m_nPoints);
+
+            // inputs already exist: binding=1 valid[], binding=4 Hi[]
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cache.ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cache.ssbo_H);
+
+            // output: binding=5 partialHi[]
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cache.ssbo_Hpartial);
+
+            glDispatchCompute((GLuint)numGroups, 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+            // PASS 2: partial -> one H_level[21]
+            glUseProgram(m_reduceHPass2Shader);
+
+            GLint uNGroupsLoc2 = glGetUniformLocation(m_reduceHPass2Shader, "uNGroups");
+            if (uNGroupsLoc2 >= 0) glUniform1i(uNGroupsLoc2, (GLint)numGroups);
+
+            // input: binding=5 partialHi[]
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cache.ssbo_Hpartial);
+
+            // output: binding=6 H_level[21]
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cache.ssbo_Hlevel);
+
+            glDispatchCompute(1, 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+            // switch back for next level's precompute
+            glUseProgram(m_preComputeShader);
+        }
     }
+
 
     glUseProgram(0);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -1468,13 +1533,13 @@ void Viewer::initializeShaders()
     m_shaders["convert8UCTo32F"] = convert8UCTo32F;
     Logger<std::string>::LogInfoI("convert8UCTo32F shader loaded.");
 
-    shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> gaussShader8C = std::make_shared<Shader>();
-    gaussShader8C->setHandle(shaderProgram);
-    gaussShader8C->compile(GL_COMPUTE_SHADER, "shaders/gauss8CShader.comp");
-    gaussShader8C->link();
-    m_shaders["gaussShader8C"] = gaussShader8C;
-    Logger<std::string>::LogInfoI("gauss 8C shader loaded.");
+    // shaderProgram = glCreateProgram();
+    // std::shared_ptr<Shader> gaussShader8C = std::make_shared<Shader>();
+    // gaussShader8C->setHandle(shaderProgram);
+    // gaussShader8C->compile(GL_COMPUTE_SHADER, "shaders/gauss8CShader.comp");
+    // gaussShader8C->link();
+    // m_shaders["gaussShader8C"] = gaussShader8C;
+    // Logger<std::string>::LogInfoI("gauss 8C shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> gaussShader32F = std::make_shared<Shader>();
@@ -1499,6 +1564,24 @@ void Viewer::initializeShaders()
     preComputeShader->link();
     m_shaders["preComputeShader"] = preComputeShader;
     Logger<std::string>::LogInfoI("preComputeShader shader loaded.");
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> reduceH1PassShader = std::make_shared<Shader>();
+    reduceH1PassShader->setHandle(shaderProgram);
+    reduceH1PassShader->compile(GL_COMPUTE_SHADER, "shaders/reduceH1PassShader.comp");
+    reduceH1PassShader->link();
+    m_shaders["reduceH1PassShader"] = reduceH1PassShader;
+    Logger<std::string>::LogInfoI("reduceH1PassShader shader loaded.");
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> reduceH2PassShader = std::make_shared<Shader>();
+    reduceH2PassShader->setHandle(shaderProgram);
+    reduceH2PassShader->compile(GL_COMPUTE_SHADER, "shaders/reduceH2PassShader.comp");
+    reduceH2PassShader->link();
+    m_shaders["reduceH2PassShader"] = reduceH2PassShader;
+    Logger<std::string>::LogInfoI("reduceH2PassShader shader loaded.");
+
+
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();

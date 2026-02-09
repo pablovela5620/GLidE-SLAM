@@ -897,7 +897,9 @@ class GPUCompute
         GLuint gauss32FHandle,
         GLuint resizeHandle,
         GLuint copySSBOHandle,
-        GLuint preComputeHandle);
+        GLuint preComputeHandle,
+        GLuint reduceH1passHandle,
+        GLuint reduceH2passHandle);
     bool buildPyramid( cv::Mat& image);
     bool initializePreCompute();
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
@@ -947,6 +949,8 @@ private:
 
     //preCompute and track shader handles
     GLuint m_preComputeShader{0};
+    GLuint m_reduceHPass1Shader{0};
+    GLuint m_reduceHPass2Shader{0};
 
     //preCompute shader uniform locations
     GLint m_uCamPoseUniform{-1};
@@ -963,6 +967,12 @@ private:
         GLuint ssbo_I      = 0; // float[N * patch area]
         GLuint ssbo_J      = 0; // float[N * patch area * 6]
         GLuint ssbo_H      = 0; // float[N * 21] upper-triangle
+
+        GLuint ssbo_Hpartial = 0;  // float[numGroups * 21]
+        GLuint ssbo_Hlevel   = 0;  // float[21]
+        GLuint ssbo_NvalidPartial = 0; // optional uint[numGroups]
+        GLuint ssbo_NvalidLevel   = 0; //optional uint[1]
+
     };
 
     std::vector<PreComputeCache> m_preComputeCache;
