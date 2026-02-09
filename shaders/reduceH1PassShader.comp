@@ -1,0 +1,72 @@
+#version 310 es
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Prefer uint to avoid negative -> huge cast issues
+uniform uint uNPoints;
+
+layout(std430, binding = 1) readonly buffer ValidBuf        { uint  Valid[]; };
+layout(std430, binding = 4) readonly buffer HBuf            { float H[];};
+layout(std430, binding = 5) writeonly buffer HpartialBuf    { float Hpartial[]; };
+
+// 21 * 256 = 5376 floats
+shared float sdata[21u * 256u];
+
+void main()
+{
+    const uint workgroupSize   = 256u;
+    const uint pointsPerThread = 4u;
+
+    uint tid = gl_LocalInvocationID.x; // 0..255
+    uint gid = gl_WorkGroupID.x; //which block from 1024 points
+
+    // Accumulate in registers
+    float H_local[21];
+    for (uint i = 0u; i < 21u; ++i)
+        H_local[i] = 0.0;
+
+    // Each thread processes 4 points
+    uint baseIdx = gid * workgroupSize * pointsPerThread + tid * pointsPerThread;
+
+    //this loop iterates withing the chunk of size points per thread
+    for (uint p = 0u; p < pointsPerThread; ++p)
+    {
+        uint ptIdx = baseIdx + p;
+        if (ptIdx >= uNPoints) break;
+
+        if (Valid[ptIdx] != 0u)
+        {
+            //stored as chunks of 21 values, take input values from H and add
+            uint hBase = ptIdx * 21u;
+            for (uint i = 0u; i < 21u; ++i)
+                H_local[i] += H[hBase + i];
+        }
+    }
+
+    // Write to shared memory: i*256 + tid
+    for (uint i = 0u; i < 21u; ++i)
+        sdata[i * workgroupSize + tid] = H_local[i];
+
+    barrier();
+
+    // Parallel reduction
+    for (uint stride = workgroupSize >> 1u; stride > 0u; stride >>= 1u)
+    {
+        if (tid < stride)
+        {
+            for (uint i = 0u; i < 21u; ++i)
+            sdata[i * workgroupSize + tid] += sdata[i * workgroupSize + tid + stride];
+        }
+        barrier();
+    }
+
+    // Thread 0 writes the partial for this workgroup
+    if (tid == 0u)
+    {
+        uint outBase = gid * 21u;
+        for (uint i = 0u; i < 21u; ++i)
+        Hpartial[outBase + i] = sdata[i * workgroupSize + 0u];
+    }
+}
