@@ -15,7 +15,8 @@ uniform uint uNPoints;
 
 layout(std430, binding = 1) readonly buffer ValidBuf        { uint  Valid[]; };
 layout(std430, binding = 4) readonly buffer HBuf            { float H[];};
-layout(std430, binding = 5) writeonly buffer HpartialBuf    { float Hpartial[]; };
+//layout(std430, binding = 5) writeonly buffer HpartialBuf    { float Hpartial[]; };
+layout(std430, binding = 6) writeonly buffer HlevelBuf      { float Hlevel[]; };
 
 // 21 * 256 = 5376 floats
 shared float sdata[21u * 256u];
@@ -103,6 +104,6 @@ void main()
     {
         uint outBase = gid * 21u;
         for (uint i = 0u; i < 21u; ++i)
-        Hpartial[outBase + i] = sdata[i * workgroupSize + 0u];
+        Hlevel[outBase + i] = sdata[i * workgroupSize + 0u];
     }
 }

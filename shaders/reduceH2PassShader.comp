@@ -17,10 +17,9 @@ void main()
     const uint workgroupSize = 256u;
     uint tid = gl_LocalInvocationID.x; // 0..255
 
-    // Accumulate in registers
     float H_local[21];
     for (uint i = 0u; i < 21u; ++i)
-    H_local[i] = 0.0;
+        H_local[i] = 0.0;
 
     // Each thread loads one or more partials (strided loading)
     uint idx = tid;
@@ -28,7 +27,7 @@ void main()
     {
         uint hBase = idx * 21u;
         for (uint i = 0u; i < 21u; ++i)
-        H_local[i] += Hpartial[hBase + i];
+            H_local[i] += Hpartial[hBase + i];
 
         idx += workgroupSize;
     }
