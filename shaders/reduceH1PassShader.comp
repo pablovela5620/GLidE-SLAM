@@ -2,9 +2,15 @@
 precision highp float;
 precision highp int;
 
+
+// 1) Each thread sums 4 points -> H_local[21].
+// 2) Store H_local into shared as a 21x256 table (rows=i, cols=tid).
+// 3) Tree-reduce across tid -> final sums end up at shared row i, col 0.
+// 4) Thread 0 writes the 21 floats to Hpartial (one 21-float partial per workgroup).
+
+
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
-// Prefer uint to avoid negative -> huge cast issues
 uniform uint uNPoints;
 
 layout(std430, binding = 1) readonly buffer ValidBuf        { uint  Valid[]; };
@@ -27,10 +33,19 @@ void main()
     for (uint i = 0u; i < 21u; ++i)
         H_local[i] = 0.0;
 
-    // Each thread processes 4 points
+    // Each thread processes 4 points, total of 256 threads
+    /*
+    tid000: [   0 |   1 |   2 |   3 ]
+    tid001: [   4 |   5 |   6 |   7 ]
+    tid002: [   8 |   9 |  10 |  11 ]
+    ...
+    tid253: [1012 |1013 |1014 |1015 ]
+    tid254: [1016 |1017 |1018 |1019 ]
+    tid255: [1020 |1021 |1022 |1023 ], group id 0
+    */
     uint baseIdx = gid * workgroupSize * pointsPerThread + tid * pointsPerThread;
 
-    //this loop iterates withing the chunk of size points per thread
+    //this loop iterates within the chunk of points per thread
     for (uint p = 0u; p < pointsPerThread; ++p)
     {
         uint ptIdx = baseIdx + p;
@@ -39,6 +54,16 @@ void main()
         if (Valid[ptIdx] != 0u)
         {
             //stored as chunks of 21 values, take input values from H and add
+            /*
+            Point 0 (ptIdx=0): H[  0 ..  20]
+            H0: [  0 |  1 |  2 |  3 | ... | 20 ]
+
+            Point 1 (ptIdx=1): H[ 21 ..  41]
+            H1: [ 21 | 22 | 23 | 24 | ... | 41 ]
+
+            Point 2 (ptIdx=2): H[ 42 ..  62]
+            H2: [ 42 | 43 | 44 | 45 | ... | 62 ]
+            */
             uint hBase = ptIdx * 21u;
             for (uint i = 0u; i < 21u; ++i)
                 H_local[i] += H[hBase + i];
@@ -46,12 +71,23 @@ void main()
     }
 
     // Write to shared memory: i*256 + tid
+    //write specific hessian entry from all threads into one entry as columns -->:
+    //H[0] from tid 0 ... to ... 255 -> into partial sdata[0 ... to ... 255]
+    //H[1]
+    //...
+    //H[20]
     for (uint i = 0u; i < 21u; ++i)
         sdata[i * workgroupSize + tid] = H_local[i];
 
+    //makes sure all threads have finished writing
     barrier();
 
-    // Parallel reduction
+    // Parallel reduction (tree/binary reduction)
+    // Sum as pairs, for 256 entries, total of 128 sums
+    //tid = 0, workgroupsize = 256, stride = 128. sdata [0] = sdata[0] + sdata[128]
+    //tid = 1, workgroupsize = 256, stride = 128. sdata [1] = sdata[1] + sdata[129]
+    //...
+    //tid = 127, workgroupsize = 256, stride = 128. sdata [127] = sdata[127] + sdata[255]
     for (uint stride = workgroupSize >> 1u; stride > 0u; stride >>= 1u)
     {
         if (tid < stride)
