@@ -906,8 +906,9 @@ class GPUCompute
     bool buildPyramid( cv::Mat& image);
     bool initializePreCompute();
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
-    cv::Mat readbackTexture(GLuint texHandle, int w, int h);
+    bool initializeTrack();
     bool track(const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
+    cv::Mat readbackTexture(GLuint texHandle, int w, int h);
     bool shutDown();
 
 private:
@@ -951,7 +952,7 @@ private:
     GLint m_uScaleFactorUniform{-1};
     GLint m_uInputTextureUniform{-1};
 
-    //preCompute and track shader handles
+    //preCompute shader handles
     GLuint m_preComputeShader{0};
     GLuint m_reduceHPass1Shader{0};
     GLuint m_reduceHPass2Shader{0};
@@ -974,11 +975,41 @@ private:
         GLuint ssbo_J      = 0; // float[N * patch area * 6]
         GLuint ssbo_H      = 0; // float[N * 21] upper-triangle
 
-        GLuint ssbo_Hpartial = 0;  // float[numGroups * 21]
-        GLuint ssbo_Hlevel   = 0;  // float[21]
+        //reduction buffers
+        GLuint ssbo_HPartial = 0;  // float[numGroups * 21]
+        GLuint ssbo_HLevel   = 0;  // float[21]
+    };
+    std::vector<PreComputeCache> m_preComputeCache;
+
+
+    //trackIC shader handles
+    GLuint m_trackICShader{0};
+
+    //trackIC uniform locations
+    GLint m_uAlignSearchUniform{-1};
+
+    //cache/data that is stored per level
+    struct TrackICCache
+    {
+        GLuint ssbo_B0          = 0;   //vec4[N]
+        GLuint ssbo_B1          = 0;   //vec4[N]
+        GLuint ssbo_Chi2        = 0;   //float[N]
+        GLuint ssbo_NIsValid    = 0;   //uint[N]
+
+        //reduction buffers: pass1
+        GLuint ssbo_B0Partial          = 0; //vec4[numGroups]
+        GLuint ssbo_B1Partial          = 0; //vec4[numGroups]
+        GLuint ssbo_Chi2Partial        = 0; //float[numGroups]
+        GLuint ssbo_NIsValidPartial    = 0; //uint[numGroups]
+
+        //reduction buffers: pass2
+        GLuint ssbo_B0Level             = 0; //vec4[numGroups]
+        GLuint ssbo_B1Level             = 0; //vec4[numGroups]
+        GLuint ssbo_Chi2Level           = 0; //float[numGroups]
+        GLuint ssbo_NIsValidLevelt      = 0; //uint[numGroups]
     };
 
-    std::vector<PreComputeCache> m_preComputeCache;
+
     GLuint m_ssboMapPoints{0};
     glm::mat4 m_poseInitial{glm::mat4(1.0f)};
 

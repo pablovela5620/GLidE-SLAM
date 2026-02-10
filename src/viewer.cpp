@@ -346,15 +346,15 @@ bool GPUCompute::initializePreCompute()
         glGenBuffers(1, &cacheLevel.ssbo_J);
         glGenBuffers(1, &cacheLevel.ssbo_H);
 
-        glGenBuffers(1,&cacheLevel.ssbo_Hpartial);
-        glGenBuffers(1,&cacheLevel.ssbo_Hlevel);
+        glGenBuffers(1,&cacheLevel.ssbo_HPartial);
+        glGenBuffers(1,&cacheLevel.ssbo_HLevel);
 
         if (cacheLevel.ssbo_isValid == 0
             || cacheLevel.ssbo_I == 0
             || cacheLevel.ssbo_J == 0
             || cacheLevel.ssbo_H == 0
-            || cacheLevel.ssbo_Hpartial == 0
-            || cacheLevel.ssbo_Hlevel == 0)
+            || cacheLevel.ssbo_HPartial == 0
+            || cacheLevel.ssbo_HLevel == 0)
             return false;
 
         //Shader buffers used in preCompute
@@ -386,11 +386,11 @@ bool GPUCompute::initializePreCompute()
         const int numGroups = (m_maxPoints + pointsPerGroup - 1) / pointsPerGroup;
         //reduction shader buffers
         //partial reduces to 21 values (half-Hessian) per workgroup, so allocate n workgroup * 21
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Hpartial);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_HPartial);
         glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(numGroups * 21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
 
         //final level are 21 values (half-Hessian)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Hlevel);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_HLevel);
         glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -491,7 +491,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         //connect buffer object to SSBO indexed binding slot(type of storage, slot number, buffer to access)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cacheLevel.ssbo_isValid);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cacheLevel.ssbo_H);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_Hpartial);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_HPartial);
 
         //launch 1st pass reduction shader
         glDispatchCompute((GLuint)numGroups, 1, 1);
@@ -502,8 +502,8 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         glUseProgram(m_reduceHPass2Shader);
 
         glUniform1i(m_uReduce2NGroupsUniform, (GLint)numGroups);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_Hpartial);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cacheLevel.ssbo_Hlevel);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_HPartial);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cacheLevel.ssbo_HLevel);
 
         //launch 2nd pass reduction shader
         glDispatchCompute(1, 1, 1);
@@ -522,6 +522,11 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
     if (glGetError() != GL_NO_ERROR) return false;
 
+    return true;
+}
+
+bool GPUCompute::initializeTrack()
+{
     return true;
 }
 
@@ -648,7 +653,7 @@ bool Viewer::initialize()
     auto &reduceH2PassShader = m_shaders.find("reduceH2PassShader")->second;
 
     //TODO: check that all shader handles are NOT null
-
+    //TODO: pass shaders as container, too many shaders for arguments
     m_gpuCompute->setShaders(convert8To32FShader->getHandle(),
         gaussShader32F->getHandle(),
         resizeShader->getHandle(),
