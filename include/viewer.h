@@ -976,7 +976,6 @@ private:
         GLuint ssbo_H      = 0; // float[N * 21] upper-triangle
 
         //reduction buffers
-        GLuint ssbo_HPartial = 0;  // float[numGroups * 21]
         GLuint ssbo_HLevel   = 0;  // float[21]
     };
     std::vector<PreComputeCache> m_preComputeCache;
@@ -998,17 +997,12 @@ private:
         GLuint ssbo_isValid     = 0;   //uint[N]
         GLuint ssbo_Align       = 0;   //vec4[N]
 
-        //reduction buffers: pass1
-        GLuint ssbo_B0Partial          = 0; //vec4[numGroups]
-        GLuint ssbo_B1Partial          = 0; //vec4[numGroups]
-        GLuint ssbo_Chi2Partial        = 0; //float[numGroups]
-        GLuint ssbo_isValidPartial    = 0; //uint[numGroups]
+        //reduction buffers for each level
+        GLuint ssbo_B0Level          = 0; //vec4[1]
+        GLuint ssbo_B1Level          = 0; //vec4[1]
+        GLuint ssbo_Chi2Level        = 0; //float[1]
+        GLuint ssbo_isValidLevel    = 0; //uint[1]
 
-        //reduction buffers: pass2
-        GLuint ssbo_B0Level             = 0; //vec4[1]
-        GLuint ssbo_B1Level             = 0; //vec4[1]
-        GLuint ssbo_Chi2Level           = 0; //float[1]
-        GLuint ssbo_isValidLevel        = 0; //uint[1]
     };
     std::vector<TrackCache> m_trackCache;
 

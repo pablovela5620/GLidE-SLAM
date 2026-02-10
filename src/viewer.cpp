@@ -340,24 +340,27 @@ bool GPUCompute::initializePreCompute()
     {
         auto& cacheLevel = m_preComputeCache[L];
 
-        //1 buffer object, store it in cache
+        //generate buffers: 1 buffer object, store it in named cache at level L
         glGenBuffers(1, &cacheLevel.ssbo_isValid);
         glGenBuffers(1, &cacheLevel.ssbo_I);
         glGenBuffers(1, &cacheLevel.ssbo_J);
         glGenBuffers(1, &cacheLevel.ssbo_H);
 
-        glGenBuffers(1,&cacheLevel.ssbo_HPartial);
         glGenBuffers(1,&cacheLevel.ssbo_HLevel);
 
+        //check if any issues
         if (cacheLevel.ssbo_isValid == 0
             || cacheLevel.ssbo_I == 0
             || cacheLevel.ssbo_J == 0
             || cacheLevel.ssbo_H == 0
-            || cacheLevel.ssbo_HPartial == 0
             || cacheLevel.ssbo_HLevel == 0)
+        {
+            Logger<std::string>::LogError("Error at SSBOs generation; initializePreCompute.");
             return false;
+        }
 
-        //Shader buffers used in preCompute
+
+        //Buffers allocation used in shader preComputeShader
         //Point valid or not (size of map points)
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValid);
         glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(uint32_t)), nullptr, GL_DYNAMIC_DRAW);
@@ -375,20 +378,7 @@ bool GPUCompute::initializePreCompute()
         glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * 21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
 
 
-        //Reduction buffers
-        //1) First-pass: we want to sum up the Hessian from every point from same workgroup in 1st pass
-        //2) Second-pass: we want to sum up the Hessian from workgroup giving final Hessian
-        //256 threads running 4 points per thread
-        const int nThreads = 256;
-        const int pointsPerThread = 4;
-        const int pointsPerGroup = nThreads * pointsPerThread; // 1024
-
-        const int numGroups = (m_maxPoints + pointsPerGroup - 1) / pointsPerGroup;
         //reduction shader buffers
-        //partial reduces to 21 values (half-Hessian) per workgroup, so allocate n workgroup * 21
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_HPartial);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(numGroups * 21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
-
         //final level are 21 values (half-Hessian)
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_HLevel);
         glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(21u * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
@@ -527,17 +517,85 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
 bool GPUCompute::initializeTrack()
 {
+
+    //Output: One per level for every output of cache (SSBOs).
     m_trackCache.resize(m_nLevels);
 
     for (size_t i = 0; i < m_nLevels; ++i)
     {
         auto& cacheLevel = m_trackCache[i];
 
-        
+        //generate buffers: 1 buffer object, store it in named cache at level L
+        glGenBuffers(1, &cacheLevel.ssbo_B0);
+        glGenBuffers(1, &cacheLevel.ssbo_B1);
+        glGenBuffers(1,&cacheLevel.ssbo_Chi2);
+        glGenBuffers(1,&cacheLevel.ssbo_isValid);
+        glGenBuffers(1,&cacheLevel.ssbo_Align);
 
+        glGenBuffers(1,&cacheLevel.ssbo_B0Level);
+        glGenBuffers(1,&cacheLevel.ssbo_B1Level);
+        glGenBuffers(1,&cacheLevel.ssbo_Chi2Level);
+        glGenBuffers(1,&cacheLevel.ssbo_isValidLevel);
+
+        //check if any issues
+        if (cacheLevel.ssbo_B0 == 0
+            || cacheLevel.ssbo_B1 == 0
+            || cacheLevel.ssbo_Chi2 == 0
+            || cacheLevel.ssbo_isValid == 0
+            || cacheLevel.ssbo_Align == 0
+
+            || cacheLevel.ssbo_B0Level == 0
+            || cacheLevel.ssbo_B1Level == 0
+            || cacheLevel.ssbo_Chi2Level == 0
+            || cacheLevel.ssbo_isValidLevel == 0)
+        {
+            Logger<std::string>::LogError("Error at SSBOs generation; initializeTrack.");
+            return false;
+        }
+
+        //Buffers allocation used in shader trackShader
+        //b output, vec4 first 4 elements (b0,b1,b2,b3)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B0);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+
+        //b output, vec4 last 2 elements (b4,b5,0,0)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B1);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+
+        //Chi2 output, floats
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+
+        //isValid, uint 1 or 0
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValid);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(uint)), nullptr, GL_DYNAMIC_DRAW);
+
+        //Align, vec4 (keeps du,dv, valid) for each point
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Align);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+
+
+        //buffer allocation used in reduction shader
+        //b output, vec4 first 4 elements (b0,b1,b2,b3)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B0Level);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+
+        //b output, vec4 last 2 elements (b4,b5,0,0)
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B1Level);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+
+        //Chi2 output, floats
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2Level);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+
+        //isValid, uint 1 or 0
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValidLevel);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(uint)), nullptr, GL_DYNAMIC_DRAW);
 
     }
-    return true;
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    return (glGetError() == GL_NO_ERROR);
 }
 
 bool GPUCompute::track(const cv::Mat poseIinitial, float outB[6], float &outChi2, int &outN)
