@@ -462,40 +462,17 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
 
         //Second-phase: Reduce H:
-        //1)First-pass: Sum all hessians per-point from same workgroup
-        //2)Second-pass: Sum all hessians from different workgroups (previous step)
-
-        //1) 256 threads running 4 points per thread
-        const int nThreads = 256;
-        const int pointsPerThread = 4;
-        const int pointsPerGroup = nThreads * pointsPerThread; // 1024
-
-        const int numGroups = (m_nPoints + pointsPerGroup - 1) / pointsPerGroup;
-
-
-        // PASS 1: Sum per-point partial
+        //Sum per-point partial
         glUseProgram(m_reduceHPass1Shader);
 
-        glUniform1i(m_uReduce1NptsUniform, (GLint)m_nPoints);
+        glUniform1ui(m_uReduce1NptsUniform, (GLint)m_nPoints);
 
         //connect buffer object to SSBO indexed binding slot(type of storage, slot number, buffer to access)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cacheLevel.ssbo_isValid);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cacheLevel.ssbo_H);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_HPartial);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_HLevel);
 
         //launch 1st pass reduction shader
-        glDispatchCompute((GLuint)numGroups, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-
-        // PASS 2: partial per level 21 values
-        glUseProgram(m_reduceHPass2Shader);
-
-        glUniform1i(m_uReduce2NGroupsUniform, (GLint)numGroups);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cacheLevel.ssbo_HPartial);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cacheLevel.ssbo_HLevel);
-
-        //launch 2nd pass reduction shader
         glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

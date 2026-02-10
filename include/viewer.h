@@ -982,7 +982,7 @@ private:
 
 
     //trackIC shader handles
-    GLuint m_trackICShader{0};
+    GLuint m_trackShader{0};
 
     //trackIC uniform locations
     GLint m_uEnableAlignUniform{-1};
