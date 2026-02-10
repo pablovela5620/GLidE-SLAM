@@ -527,6 +527,16 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
 bool GPUCompute::initializeTrack()
 {
+    m_trackCache.resize(m_nLevels);
+
+    for (size_t i = 0; i < m_nLevels; ++i)
+    {
+        auto& cacheLevel = m_trackCache[i];
+
+        
+
+
+    }
     return true;
 }
 
@@ -651,6 +661,7 @@ bool Viewer::initialize()
     auto &preComputeShader = m_shaders.find("preComputeShader")->second;
     auto &reduceH1PassShader = m_shaders.find("reduceH1PassShader")->second;
     auto &reduceH2PassShader = m_shaders.find("reduceH2PassShader")->second;
+    auto &trackShader = m_shaders.find("trackShader")->second;
 
     //TODO: check that all shader handles are NOT null
     //TODO: pass shaders as container, too many shaders for arguments

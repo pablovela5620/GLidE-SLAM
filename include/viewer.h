@@ -986,29 +986,31 @@ private:
     GLuint m_trackICShader{0};
 
     //trackIC uniform locations
-    GLint m_uAlignSearchUniform{-1};
+    GLint m_uEnableAlignUniform{-1};
+    GLint m_uIterationUniform{-1};
 
     //cache/data that is stored per level
-    struct TrackICCache
+    struct TrackCache
     {
         GLuint ssbo_B0          = 0;   //vec4[N]
         GLuint ssbo_B1          = 0;   //vec4[N]
         GLuint ssbo_Chi2        = 0;   //float[N]
-        GLuint ssbo_NIsValid    = 0;   //uint[N]
+        GLuint ssbo_isValid     = 0;   //uint[N]
+        GLuint ssbo_Align       = 0;   //vec4[N]
 
         //reduction buffers: pass1
         GLuint ssbo_B0Partial          = 0; //vec4[numGroups]
         GLuint ssbo_B1Partial          = 0; //vec4[numGroups]
         GLuint ssbo_Chi2Partial        = 0; //float[numGroups]
-        GLuint ssbo_NIsValidPartial    = 0; //uint[numGroups]
+        GLuint ssbo_isValidPartial    = 0; //uint[numGroups]
 
         //reduction buffers: pass2
-        GLuint ssbo_B0Level             = 0; //vec4[numGroups]
-        GLuint ssbo_B1Level             = 0; //vec4[numGroups]
-        GLuint ssbo_Chi2Level           = 0; //float[numGroups]
-        GLuint ssbo_NIsValidLevelt      = 0; //uint[numGroups]
+        GLuint ssbo_B0Level             = 0; //vec4[1]
+        GLuint ssbo_B1Level             = 0; //vec4[1]
+        GLuint ssbo_Chi2Level           = 0; //float[1]
+        GLuint ssbo_isValidLevel        = 0; //uint[1]
     };
-
+    std::vector<TrackCache> m_trackCache;
 
     GLuint m_ssboMapPoints{0};
     glm::mat4 m_poseInitial{glm::mat4(1.0f)};
