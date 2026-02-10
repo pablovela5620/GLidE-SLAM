@@ -4,9 +4,10 @@ precision highp int;
 
 
 // 1) Each thread sums 4 points -> H_local[21].
-// 2) Store H_local into shared as a 21x256 table (rows=i, cols=tid).
-// 3) Tree-reduce across tid -> final sums end up at shared row i, col 0.
-// 4) Thread 0 writes the 21 floats to Hpartial (one 21-float partial per workgroup).
+// 2) Store H_local into shared memory 21x256 table (rows= H[i], cols=[threadID]).
+// 3) Tree-reduce using threadIDs: final sum into single row i, col 0.
+// 4) Thread 0 writes the 21 floats to HLevel directly, we skip HPartial since we cap at 1000 map points.
+//if the number increases, we might need two shader passes.
 
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -19,39 +20,42 @@ layout(std430, binding = 4) readonly buffer HBuf            { float H[];};
 layout(std430, binding = 6) writeonly buffer HlevelBuf      { float Hlevel[]; };
 
 // 21 * 256 = 5376 floats
-shared float sdata[21u * 256u];
+shared float sharedData[21u * 256u];
 
 void main()
 {
     const uint workgroupSize   = 256u;
     const uint pointsPerThread = 4u;
 
-    uint tid = gl_LocalInvocationID.x; // 0..255
+    uint threadID = gl_LocalInvocationID.x; // 0..255
     uint gid = gl_WorkGroupID.x; //which block from 1024 points
 
-    // Accumulate in registers
+    // reset registers
     float H_local[21];
     for (uint i = 0u; i < 21u; ++i)
         H_local[i] = 0.0;
 
     // Each thread processes 4 points, total of 256 threads
     /*
-    tid000: [   0 |   1 |   2 |   3 ]
-    tid001: [   4 |   5 |   6 |   7 ]
-    tid002: [   8 |   9 |  10 |  11 ]
+    threadID000: [   0 |   1 |   2 |   3 ]
+    threadID001: [   4 |   5 |   6 |   7 ]
+    threadID002: [   8 |   9 |  10 |  11 ]
     ...
-    tid253: [1012 |1013 |1014 |1015 ]
-    tid254: [1016 |1017 |1018 |1019 ]
-    tid255: [1020 |1021 |1022 |1023 ], group id 0
+    threadID253: [1012 |1013 |1014 |1015 ]
+    threadID254: [1016 |1017 |1018 |1019 ]
+    threadID255: [1020 |1021 |1022 |1023 ], group id 0
     */
-    uint baseIdx = gid * workgroupSize * pointsPerThread + tid * pointsPerThread;
 
-    //this loop iterates within the chunk of points per thread
+    //in this case, gid is always 0, so in practice baseIdx starts at threadID * pointsPerThread
+    uint baseIdx = gid * workgroupSize * pointsPerThread + threadID * pointsPerThread;
+
+    //this loop sums 4 points per threadID
     for (uint p = 0u; p < pointsPerThread; ++p)
     {
         uint ptIdx = baseIdx + p;
         if (ptIdx >= uNPoints) break;
 
+        //skip invalid points
         if (Valid[ptIdx] != 0u)
         {
             //stored as chunks of 21 values, take input values from H and add
@@ -65,45 +69,47 @@ void main()
             Point 2 (ptIdx=2): H[ 42 ..  62]
             H2: [ 42 | 43 | 44 | 45 | ... | 62 ]
             */
+
+            //sum each of the H[i]s from the 4 points into H_local
             uint hBase = ptIdx * 21u;
             for (uint i = 0u; i < 21u; ++i)
                 H_local[i] += H[hBase + i];
         }
     }
 
-    // Write to shared memory: i*256 + tid
-    //write specific hessian entry from all threads into one entry as columns -->:
-    //H[0] from tid 0 ... to ... 255 -> into partial sdata[0 ... to ... 255]
+    // Write to shared memory: i*256 + threadID
+    //write specific hessian entry from all threads into one entry as columns:
+    //H[0] from threadID 0 ... to ... 255 -> into partial sharedData[0 ... to ... 255]
     //H[1]
     //...
     //H[20]
     for (uint i = 0u; i < 21u; ++i)
-        sdata[i * workgroupSize + tid] = H_local[i];
+        sharedData[i * workgroupSize + threadID] = H_local[i];
 
     //makes sure all threads have finished writing
     barrier();
 
     // Parallel reduction (tree/binary reduction)
-    // Sum as pairs, for 256 entries, total of 128 sums
-    //tid = 0, workgroupsize = 256, stride = 128. sdata [0] = sdata[0] + sdata[128]
-    //tid = 1, workgroupsize = 256, stride = 128. sdata [1] = sdata[1] + sdata[129]
+    // Sum as pairs, for 256 entries, total of 128 sums on first iteration, then 64 ... etc.
+    //threadID = 0, workgroupsize = 256, stride = 128. sharedData [0] = sharedData[0] + sharedData[128]
+    //threadID = 1, workgroupsize = 256, stride = 128. sharedData [1] = sharedData[1] + sharedData[129]
     //...
-    //tid = 127, workgroupsize = 256, stride = 128. sdata [127] = sdata[127] + sdata[255]
+    //threadID = 127, workgroupsize = 256, stride = 128. sharedData [127] = sharedData[127] + sharedData[255]
     for (uint stride = workgroupSize >> 1u; stride > 0u; stride >>= 1u)
     {
-        if (tid < stride)
+        if (threadID < stride)
         {
             for (uint i = 0u; i < 21u; ++i)
-            sdata[i * workgroupSize + tid] += sdata[i * workgroupSize + tid + stride];
+            sharedData[i * workgroupSize + threadID] += sharedData[i * workgroupSize + threadID + stride];
         }
         barrier();
     }
 
     // Thread 0 writes the partial for this workgroup
-    if (tid == 0u)
+    if (threadID == 0u)
     {
         uint outBase = gid * 21u;
         for (uint i = 0u; i < 21u; ++i)
-        Hlevel[outBase + i] = sdata[i * workgroupSize + 0u];
+        Hlevel[outBase + i] = sharedData[i * workgroupSize + 0u];
     }
 }

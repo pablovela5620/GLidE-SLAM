@@ -525,6 +525,15 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     return true;
 }
 
+bool GPUCompute::track(const cv::Mat poseIinitial, float outB[6], float &outChi2, int &outN)
+{
+    return true;
+}
+
+bool GPUCompute::shutDown()
+{
+    return true;
+}
 
 
 cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
@@ -566,6 +575,7 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
 
     return result;
 }
+
 
 bool Viewer::initialize()
 {
@@ -1489,21 +1499,20 @@ void Viewer::initializeShaders()
     GLuint shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> shaderSimpleWhite = std::make_shared<Shader>();
     shaderSimpleWhite->setHandle(shaderProgram);
-
     shaderSimpleWhite->compile(GL_VERTEX_SHADER, "shaders/basicShader.vert");
     shaderSimpleWhite->compile(GL_FRAGMENT_SHADER, "shaders/basicShader.frag");
+    shaderSimpleWhite->setShaderName("basicShader");
     shaderSimpleWhite->link();
     m_shaders["basicShader"] = shaderSimpleWhite;
-    Logger<std::string>::LogInfoI("basic shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> pointShader = std::make_shared<Shader>();
     pointShader->setHandle(shaderProgram);
     pointShader->compile(GL_VERTEX_SHADER, "shaders/pointShader.vert");
     pointShader->compile(GL_FRAGMENT_SHADER, "shaders/pointShader.frag");
+    pointShader->setShaderName("pointShader");
     pointShader->link();
     m_shaders["pointShader"] = pointShader;
-    Logger<std::string>::LogInfoI("pointShader shader loaded.");
 
     //canvas shader
     shaderProgram = glCreateProgram();
@@ -1511,9 +1520,9 @@ void Viewer::initializeShaders()
     shaderCanvas->setHandle(shaderProgram);
     shaderCanvas->compile(GL_VERTEX_SHADER, "shaders/canvasShader.vert");
     shaderCanvas->compile(GL_FRAGMENT_SHADER, "shaders/canvasShader.frag");
+    shaderCanvas->setShaderName("canvasShader");
     shaderCanvas->link();
     m_shaders["canvasShader"] = shaderCanvas;
-    Logger<std::string>::LogInfoI("canvas shader loaded.");
 
     //lines shader
     shaderProgram = glCreateProgram();
@@ -1521,74 +1530,65 @@ void Viewer::initializeShaders()
     shaderLines->setHandle(shaderProgram);
     shaderLines->compile(GL_VERTEX_SHADER, "shaders/linesShader.vert");
     shaderLines->compile(GL_FRAGMENT_SHADER, "shaders/linesShader.frag");
+    shaderLines->setShaderName("linesShader");
     shaderLines->link();
     m_shaders["linesShader"] = shaderLines;
-    Logger<std::string>::LogInfoI("lines shader loaded.");
 
     //compute shaders
     //image pyramid shaders, gauss resize
     shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> convert8UCTo32F = std::make_shared<Shader>();
-    convert8UCTo32F->setHandle(shaderProgram);
-    convert8UCTo32F->compile(GL_COMPUTE_SHADER, "shaders/convert8UCTo32FShader.comp");
-    convert8UCTo32F->link();
-    m_shaders["convert8UCTo32F"] = convert8UCTo32F;
-    Logger<std::string>::LogInfoI("convert8UCTo32F shader loaded.");
-
-    // shaderProgram = glCreateProgram();
-    // std::shared_ptr<Shader> gaussShader8C = std::make_shared<Shader>();
-    // gaussShader8C->setHandle(shaderProgram);
-    // gaussShader8C->compile(GL_COMPUTE_SHADER, "shaders/gauss8CShader.comp");
-    // gaussShader8C->link();
-    // m_shaders["gaussShader8C"] = gaussShader8C;
-    // Logger<std::string>::LogInfoI("gauss 8C shader loaded.");
+    std::shared_ptr<Shader> convert8UCTo32FShader = std::make_shared<Shader>();
+    convert8UCTo32FShader->setHandle(shaderProgram);
+    convert8UCTo32FShader->compile(GL_COMPUTE_SHADER, "shaders/convert8UCTo32FShader.comp");
+    convert8UCTo32FShader->setShaderName("convert8UCTo32FShader");
+    convert8UCTo32FShader->link();
+    m_shaders["convert8UCTo32FShader"] = convert8UCTo32FShader;
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> gaussShader32F = std::make_shared<Shader>();
     gaussShader32F->setHandle(shaderProgram);
     gaussShader32F->compile(GL_COMPUTE_SHADER, "shaders/gauss32FShader.comp");
+    gaussShader32F->setShaderName("gaussShader32F");
     gaussShader32F->link();
     m_shaders["gaussShader32F"] = gaussShader32F;
-    Logger<std::string>::LogInfoI("gauss 32 F shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> resizeShader = std::make_shared<Shader>();
     resizeShader->setHandle(shaderProgram);
     resizeShader->compile(GL_COMPUTE_SHADER, "shaders/resizeShader.comp");
+    resizeShader->setShaderName("resizeShader");
     resizeShader->link();
     m_shaders["resizeShader"] = resizeShader;
-    Logger<std::string>::LogInfoI("resize shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> preComputeShader = std::make_shared<Shader>();
     preComputeShader->setHandle(shaderProgram);
     preComputeShader->compile(GL_COMPUTE_SHADER, "shaders/preComputeShader.comp");
+    preComputeShader->setShaderName("preComputeShader");
     preComputeShader->link();
     m_shaders["preComputeShader"] = preComputeShader;
-    Logger<std::string>::LogInfoI("preComputeShader shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> reduceH1PassShader = std::make_shared<Shader>();
     reduceH1PassShader->setHandle(shaderProgram);
     reduceH1PassShader->compile(GL_COMPUTE_SHADER, "shaders/reduceH1PassShader.comp");
+    reduceH1PassShader->setShaderName("reduceH1PassShader");
     reduceH1PassShader->link();
     m_shaders["reduceH1PassShader"] = reduceH1PassShader;
-    Logger<std::string>::LogInfoI("reduceH1PassShader shader loaded.");
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> reduceH2PassShader = std::make_shared<Shader>();
     reduceH2PassShader->setHandle(shaderProgram);
     reduceH2PassShader->compile(GL_COMPUTE_SHADER, "shaders/reduceH2PassShader.comp");
+    reduceH2PassShader->setShaderName("reduceH2PassShader");
     reduceH2PassShader->link();
     m_shaders["reduceH2PassShader"] = reduceH2PassShader;
-    Logger<std::string>::LogInfoI("reduceH2PassShader shader loaded.");
-
-
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();
     copySSBO->setHandle(shaderProgram);
     copySSBO->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBOShader.comp");
+    copySSBO->setShaderName("copyToSSBO");
     copySSBO->link();
     m_shaders["copyToSSBO"] = copySSBO;
 
@@ -1754,6 +1754,8 @@ bool Shader::link()
         fprintf(stderr, "Linker failure: %s\n", strInfoLog);
         std::cout << strInfoLog << std::endl;
         delete[] strInfoLog;
+        if (!m_shaderName.empty())
+            Logger<std::string>::LogError(m_shaderName + " shader linking failed!");
         return false;
     }
 
@@ -1768,6 +1770,8 @@ bool Shader::link()
     //in either case, detach shader objects
     detachAndDeleteShaders();
 
+    if (!m_shaderName.empty())
+        Logger<std::string>::LogInfoI(m_shaderName + " shader linked and loaded successfully.");
     return true;
 }
 

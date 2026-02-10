@@ -27,10 +27,10 @@ void main()
     if (pix.x >= imageBounds.x || pix.y >= imageBounds.y) return;
 
     float sum = loadClamped(pix) * w0;
-    sum += loadClamped(pix + uDir * 1) * w1;
-    sum += loadClamped(pix - uDir * 1) * w1;
-    sum += loadClamped(pix + uDir * 2) * w2;
-    sum += loadClamped(pix - uDir * 2) * w2;
+    sum += loadClamped(pix + uDirection * 1) * w1;
+    sum += loadClamped(pix - uDirection * 1) * w1;
+    sum += loadClamped(pix + uDirection * 2) * w2;
+    sum += loadClamped(pix - uDirection * 2) * w2;
 
     imageStore(outputImage, pix, vec4(sum, 0.0, 0.0, 1.0));
 }

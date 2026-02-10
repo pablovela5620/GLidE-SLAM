@@ -476,6 +476,8 @@ public:
 
     void setUniform(const char *name, int val);
 
+    void setShaderName(const std::string name) {m_shaderName = name;};
+
 private:
     int getUniformLocation(const char *name);
 
@@ -493,6 +495,7 @@ private:
     std::map<std::string, GLuint> m_uniformLocations;
     std::map<std::string, GLuint> m_attributeLocations;
     bool m_isLinked{false};
+    std::string m_shaderName{""};
 };
 
 class Canvas

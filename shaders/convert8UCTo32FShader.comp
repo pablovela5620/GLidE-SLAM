@@ -9,11 +9,11 @@ layout(binding = 1, r32f) writeonly uniform highp image2D outputImage;
 void main()
 {
     ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 sz = textureSize(inputTexture, 0);
+    ivec2 sz = textureSize(uInputTexture, 0);
     if (pix.x >= sz.x || pix.y >= sz.y) return;
 
     // For GL_R8 (UNORM), texelFetch returns normalized float in [0,1]
-    float v = texelFetch(inputTexture, pix, 0).r;
+    float v = texelFetch(uInputTexture, pix, 0).r;
 
     imageStore(outputImage, pix, vec4(v, 0.0, 0.0, 1.0));
 }
