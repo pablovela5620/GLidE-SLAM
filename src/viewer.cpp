@@ -535,7 +535,6 @@ bool GPUCompute::shutDown()
     return true;
 }
 
-
 cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
 {
     size_t size = (size_t)w * (size_t)h * sizeof(float);
@@ -575,7 +574,6 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
 
     return result;
 }
-
 
 bool Viewer::initialize()
 {
