@@ -29,6 +29,7 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     initializePreCompute();
 }
 
+//TODO: Pass a map (string, GLuint) instead
 bool GPUCompute::setShaders(GLuint convert8To32Handle,
     GLuint gauss32FHandle,
     GLuint resizeHandle,
