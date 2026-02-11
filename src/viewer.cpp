@@ -57,21 +57,32 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_preComputeShader = preComputeHandle;
 
     //set shader uniforms (pyramid shader)
-    m_uBlurDirectionUniform32F = glGetUniformLocation(m_gauss32FShader, "uDirection");
-    m_uScaleFactorUniform = glGetUniformLocation(m_resizeShader, "uScaleFactor");
+    m_uBlurDirPyramid = glGetUniformLocation(m_gauss32FShader, "uDirection");
+    m_uScaleFactorPyramid = glGetUniformLocation(m_resizeShader, "uScaleFactor");
     m_copyWidthUniform = glGetUniformLocation(m_copySSBOShader, "uWidth");
-    m_uInputTextureUniform = glGetUniformLocation(m_convert8UCTo32FShader, "uInputTexture");
+    m_uInputTexPyramid = glGetUniformLocation(m_convert8UCTo32FShader, "uInputTexture");
 
-    //TODO: Adjust uniform names in shader and correct here.
     //set shader uniforms (precompute shader)
-    m_uCamPoseUniform = glGetUniformLocation(m_preComputeShader, "uPose");
-    m_uIntrinsicsUniform = glGetUniformLocation(m_preComputeShader, "uK");
-    m_uPatchSizeUniform = glGetUniformLocation(m_preComputeShader, "uPatchSize");
-    m_uLevelUniform = glGetUniformLocation(m_preComputeShader, "uLevel");
-    m_uNpointsUniform    = glGetUniformLocation(m_preComputeShader, "uNPoints");
-    m_uRefTextureUniform = glGetUniformLocation(m_preComputeShader, "uRefTexture");
-    m_uReduce1NptsUniform = glGetUniformLocation(m_reduceHPass1Shader, "uNPoints");
-    m_uReduce2NGroupsUniform = glGetUniformLocation(m_reduceHPass2Shader, "uNGroups");
+    m_uPosePreCompute = glGetUniformLocation(m_preComputeShader, "uPose");
+    m_uKPreCompute = glGetUniformLocation(m_preComputeShader, "uK");
+    m_uPatchSizePreCompute = glGetUniformLocation(m_preComputeShader, "uPatchSize");
+    m_uLevelPreCompute = glGetUniformLocation(m_preComputeShader, "uLevel");
+    m_uNpointsPreCompute    = glGetUniformLocation(m_preComputeShader, "uNPoints");
+    m_uRefTexPreCompute = glGetUniformLocation(m_preComputeShader, "uRefTexture");
+    m_uReduce1PreCompute = glGetUniformLocation(m_reduceH1PreCompute, "uNPoints");
+    m_uReduce2PreCompute = glGetUniformLocation(m_reduceH2PreCompute, "uNGroups");
+
+    //set shader uniforms (precompute shader)
+    m_uEnableAlignTrack = glGetUniformLocation(m_trackShader, "uEnableAlign");
+    m_uIterationTrack = glGetUniformLocation(m_trackShader, "uIteration");
+    m_uPoseTrack = glGetUniformLocation(m_trackShader, "uPose");
+    m_uKTrack = glGetUniformLocation(m_trackShader, "uK");
+    m_uPatchSizeTrack = glGetUniformLocation(m_trackShader, "uPatchSize");
+    m_uLevelTrack = glGetUniformLocation(m_trackShader, "uLevel");
+    m_uNewTexTrack = glGetUniformLocation(m_trackShader, "uNewTexture");
+    m_uNpointsTrack = glGetUniformLocation(m_trackShader, "uNPoints");
+
+
 
     //used for debugging (compare image pyramids)
     // Create readback SSBO (size for largest level)
@@ -188,7 +199,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
     glActiveTexture(GL_TEXTURE0); //select texture unit 0
     glBindTexture(GL_TEXTURE_2D, m_sourceTextureR8); //bind the texture to unit 0
     //stores the integer 0 into the sampler uniform, the shader reads from texture unit index 0.
-    glUniform1i(m_uInputTextureUniform, 0); //input texture sample from unit 0
+    glUniform1i(m_uInputTexPyramid, 0); //input texture sample from unit 0
     //binds image pyramid [0] as image to image unit 1 (in shader: binding = 1)
     glBindImageTexture(1, m_pyrTexHandles[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
@@ -212,7 +223,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         // Gauss blur shader
         // Read from pyramidTexture Handle [L - 1] -> apply blur and write to tempTexture Handle [L-1]
         glUseProgram(m_gauss32FShader);
-        glUniform2i(m_uBlurDirectionUniform32F, 0, 1); //set direction to vertical
+        glUniform2i(m_uBlurDirPyramid, 0, 1); //set direction to vertical
         glBindImageTexture(0, m_pyrTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
@@ -226,7 +237,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         // Gauss Horizontal blur
         // Read from tempTexture Handle [L - 1] -> apply blur and write to blurTexture Handle [L-1]
         glUseProgram(m_gauss32FShader);
-        glUniform2i(m_uBlurDirectionUniform32F, 1, 0); //set direction to horizontal
+        glUniform2i(m_uBlurDirPyramid, 1, 0); //set direction to horizontal
         glBindImageTexture(0, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
@@ -240,7 +251,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
         //Resize
         // Read from blurTexture Handle [L - 1] -> apply resize and write to pyramid Texture Handle [L]
         glUseProgram(m_resizeShader);
-        glUniform1f(m_uScaleFactorUniform, m_scaleFactor);
+        glUniform1f(m_uScaleFactorPyramid, m_scaleFactor);
         glBindImageTexture(0, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
         glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(dstW, 16), ceilDiv(dstH, 16), 1);
@@ -423,10 +434,10 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
     //write to shader uniforms
     //uLevel and intrinsics uniforms are level-dependent, so they are set in loop
-    glUniformMatrix4fv(m_uCamPoseUniform, 1, GL_FALSE, &glmPose[0][0]);
-    glUniform1i(m_uPatchSizeUniform, m_patchSize);
-    glUniform1i(m_uNpointsUniform, (GLint)m_nPoints);
-    glUniform1i(m_uRefTextureUniform,0); //input texture sample from unit 0
+    glUniformMatrix4fv(m_uPosePreCompute, 1, GL_FALSE, &glmPose[0][0]);
+    glUniform1i(m_uPatchSizePreCompute, m_patchSize);
+    glUniform1i(m_uNpointsPreCompute, (GLint)m_nPoints);
+    glUniform1i(m_uRefTexPreCompute,0); //input texture sample from unit 0
 
     //main loop for precompute inverse-compositional
     //course-to-fine here is actually irrelevant
@@ -434,14 +445,14 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     {
         //Inputs:
         //update level uniform
-        glUniform1i(m_uLevelUniform, L);
+        glUniform1i(m_uLevelPreCompute, L);
 
         // update intrinsics (pre-scaled) uniforms
         float fx = m_fx * m_invScaleFactors[L];
         float fy = m_fy * m_invScaleFactors[L];
         float cx = m_cx * m_invScaleFactors[L];
         float cy = m_cy * m_invScaleFactors[L];
-        glUniform4f(m_uIntrinsicsUniform, fx , fy, cx, cy);
+        glUniform4f(m_uKPreCompute, fx , fy, cx, cy);
 
         //bind image pyramid level
         glActiveTexture(GL_TEXTURE0);
@@ -464,9 +475,9 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
         //Second-phase: Reduce H:
         //Sum per-point partial
-        glUseProgram(m_reduceHPass1Shader);
+        glUseProgram(m_reduceH1PreCompute);
 
-        glUniform1ui(m_uReduce1NptsUniform, (GLint)m_nPoints);
+        glUniform1ui(m_uReduce1PreCompute, (GLint)m_nPoints);
 
         //connect buffer object to SSBO indexed binding slot(type of storage, slot number, buffer to access)
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cacheLevel.ssbo_isValid);
@@ -576,8 +587,102 @@ bool GPUCompute::initializeTrack()
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::track(const cv::Mat poseIinitial, float outB[6], float &outChi2, int &outN)
+bool GPUCompute::readBackLevelH(Eigen::Matrix<float, 6, 6> &H, GLuint ssbo, size_t numBytes)
 {
+    if (ssbo == 0 || numBytes == 0)
+        return false;
+
+    float h[21];
+    if (numBytes != sizeof(h))
+        return false;
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,0,(GLsizei)numBytes,GL_MAP_READ_BIT);
+    if (!ptr)
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        return false;
+    }
+
+    std::memcpy(h, ptr, numBytes);
+
+    GLboolean ok = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    if (ok == GL_FALSE)
+        return false;
+
+    auto matrixTriangleIndex = [] (int a, int b)->int{int base = (a*6)-((a*(a-1))/2); return base + (b-a);};
+    H = Eigen::Matrix<float,6,6>::Zero();
+    for (size_t a = 0; a < 6; ++a)
+    {
+        for (size_t b = a; b < 6; ++b)
+        {
+            float value = h[matrixTriangleIndex(a,b)];
+            H(a,b) = value;
+            H(b,a) = value;
+        }
+    }
+    return (glGetError() == GL_NO_ERROR);
+}
+
+bool GPUCompute::track(const cv::Mat pose, float outB[6], float &outChi2, int &outN)
+{
+    if (pose.empty()) return false;
+    if (pose.type() != CV_32FC1) return false;
+    if (m_nLevels <= 0) return false;
+    if (m_nPoints == 0 || m_nPoints > m_maxPoints) return false;
+
+
+    //convert pose from opencv -> glm (glsl)
+    glm::mat4 glmPose(1.0f);
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            glmPose[j][i] = pose.at<float>(i, j);
+
+
+    const uint enableAlign = 0;
+
+    //write to shader uniforms
+    //uLevel and uK uniforms are level-dependent, so they are set in loop
+    //uIteration is per iteration dependent, set in iteration loop
+
+    glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
+    glUniform1i(m_uPatchSizeTrack, m_patchSize);
+    glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
+    glUniform1ui(m_uEnableAlignTrack, (GLint)enableAlign);
+    glUniform1i(m_uNewTexTrack,0); //input texture sample from unit 0
+
+    if (outB != nullptr)
+        for (int i = 0; i < 6; i++)
+            outB[i] = 0.0f;
+    outChi2 = 0.0f;
+    outN = 0;
+
+    //TODO: pass as parameters through config file
+    const int maxIters = 10;
+    const float epsNorm = 1e-4f;
+    const int minMeas = 16 * 3; // same guard as CPU
+
+    float finalChi2Mean = std::numeric_limits<float>::max();
+    bool anyLevelOk = false;
+
+
+    //Main loop, course to fine levels
+    for (size_t L = m_nLevels-1; L > 0; --L)
+    {
+        //one H per level, read back from SSBO (precomputed)
+        Eigen::Matrix<float,6,6> H;
+        readBackLevelH(H,m_preComputeCache[L].ssbo_H,21);
+
+        if (H.diagonal().minCoeff() < 1e-6f)
+        {
+            Logger<std::string>::LogError("H diagonal coefficients too small! Aborting.");
+            return false;
+        }
+
+    }
+
+
     return true;
 }
 

@@ -904,16 +904,17 @@ class GPUCompute
         GLuint reduceH1passHandle,
         GLuint reduceH2passHandle);
     bool buildPyramid( cv::Mat& image);
-    bool initializePreCompute();
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
-    bool initializeTrack();
     bool track(const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
     bool shutDown();
 
 private:
     void initializeImagePyramids();
+    bool initializePreCompute();
+    bool initializeTrack();
 
+    bool readBackLevelH(Eigen::Matrix<float,6,6>& H, GLuint ssbo, size_t numBytes);
 private:
 
     size_t m_maxPoints{1024};
@@ -948,24 +949,24 @@ private:
     GLuint m_resizeShader{0};
 
     //pyramid shader uniform localtions
-    GLint m_uBlurDirectionUniform32F{-1};
-    GLint m_uScaleFactorUniform{-1};
-    GLint m_uInputTextureUniform{-1};
+    GLint m_uBlurDirPyramid{-1};
+    GLint m_uScaleFactorPyramid{-1};
+    GLint m_uInputTexPyramid{-1};
 
     //preCompute shader handles
     GLuint m_preComputeShader{0};
-    GLuint m_reduceHPass1Shader{0};
-    GLuint m_reduceHPass2Shader{0};
+    GLuint m_reduceH1PreCompute{0};
+    GLuint m_reduceH2PreCompute{0};
 
     //preCompute shader uniform locations
-    GLint m_uCamPoseUniform{-1};
-    GLint m_uIntrinsicsUniform{-1};
-    GLint m_uPatchSizeUniform{-1};
-    GLint m_uLevelUniform{-1};
-    GLint m_uRefTextureUniform{-1};
-    GLint m_uNpointsUniform{-1};
-    GLint m_uReduce1NptsUniform{-1};
-    GLint m_uReduce2NGroupsUniform{-1};
+    GLint m_uPosePreCompute{-1};
+    GLint m_uKPreCompute{-1};
+    GLint m_uPatchSizePreCompute{-1};
+    GLint m_uLevelPreCompute{-1};
+    GLint m_uRefTexPreCompute{-1};
+    GLint m_uNpointsPreCompute{-1};
+    GLint m_uReduce1PreCompute{-1};
+    GLint m_uReduce2PreCompute{-1};
 
     //cache/data that is stored per level
     struct PreComputeCache
@@ -981,12 +982,18 @@ private:
     std::vector<PreComputeCache> m_preComputeCache;
 
 
-    //trackIC shader handles
+    //track shader handles
     GLuint m_trackShader{0};
 
-    //trackIC uniform locations
-    GLint m_uEnableAlignUniform{-1};
-    GLint m_uIterationUniform{-1};
+    //track uniform locations
+    GLint m_uEnableAlignTrack{-1};
+    GLint m_uIterationTrack{-1};
+    GLint m_uPoseTrack{-1};
+    GLint m_uKTrack{-1};
+    GLint m_uPatchSizeTrack{-1};
+    GLint m_uLevelTrack{-1};
+    GLint m_uNewTexTrack{-1};
+    GLint m_uNpointsTrack{-1};
 
     //cache/data that is stored per level
     struct TrackCache
@@ -1001,10 +1008,39 @@ private:
         GLuint ssbo_B0Level          = 0; //vec4[1]
         GLuint ssbo_B1Level          = 0; //vec4[1]
         GLuint ssbo_Chi2Level        = 0; //float[1]
-        GLuint ssbo_isValidLevel    = 0; //uint[1]
+        GLuint ssbo_isValidLevel     = 0; //uint[1]
 
     };
     std::vector<TrackCache> m_trackCache;
+
+    //trackShader SSBO binding layout
+    // Inputs:
+    static const GLuint BIND_MAPPOINTS      {0}; // m_ssboMapPoints (vec4 pos[])
+    static const GLuint BIND_REF_VALID      {1}; // preComputeCache[L].ssbo_isValid (uint[])
+    static const GLuint BIND_REF_I          {2}; // preComputeCache[L].ssbo_I (float[])
+    static const GLuint BIND_REF_J          {3}; // preComputeCache[L].ssbo_J (float[])
+
+    // Outputs:
+    static const GLuint BIND_B0             {5}; // trackCache[L].ssbo_B0 (vec4[])
+    static const GLuint BIND_B1             {6}; // trackCache[L].ssbo_B1 (vec4[])
+    static const GLuint BIND_CHI2           {7}; // trackCache[L].ssbo_Chi2 (float[])
+    static const GLuint BIND_ISVALID        {8}; // trackCache[L].ssbo_isValid (uint[])
+    static const GLuint BIND_ALIGN          {9}; // trackCache[L].ssbo_Align (vec4[])
+
+    //track reduction shader binding layout
+    // Inputs:
+    static const GLuint REDUCE_IN_B0        {5};
+    static const GLuint REDUCE_IN_B1        {6};
+    static const GLuint REDUCE_IN_CHI2      {7};
+    static const GLuint REDUCE_IN_ISVALID   {8};
+
+    // Outputs:
+    static const GLuint REDUCE_OUT_B0       {10};
+    static const GLuint REDUCE_OUT_B1       {11};
+    static const GLuint REDUCE_OUT_CHI2     {12};
+    static const GLuint REDUCE_OUT_ISVALID  {13};
+
+
 
     GLuint m_ssboMapPoints{0};
     glm::mat4 m_poseInitial{glm::mat4(1.0f)};
