@@ -914,7 +914,7 @@ private:
     bool initializePreCompute();
     bool initializeTrack();
 
-    bool readSSBO(GLuint ssbo, size_t numBytes, void* destination);
+    bool readSSBO(GLuint ssbo, void* destination,size_t numBytes);
     bool rebuildH(Eigen::Matrix<float,6,6>& H, const float* hTemp);
 private:
 

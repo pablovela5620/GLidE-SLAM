@@ -588,7 +588,7 @@ bool GPUCompute::initializeTrack()
 }
 
 
-bool GPUCompute::readSSBO(GLuint ssbo, size_t numBytes, void* destination)
+bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
 {
     //read ssbo
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
@@ -652,7 +652,7 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
     //TODO: pass as parameters through config file
     const int maxIters = 10;
     const float epsNorm = 1e-4f;
-    const int minMeas = 16 * 3; // same guard as CPU
+    const int minMeasurements = 16 * 3; // same guard as CPU
 
     float finalChi2Mean = std::numeric_limits<float>::max();
     bool anyLevelOk = false;
@@ -664,7 +664,11 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
         //one H per level, read back from SSBO (precomputed)
         Eigen::Matrix<float,6,6> H = Eigen::Matrix<float,6,6>::Zero();
         float Htemp[21];
-        readSSBO(m_preComputeCache[L].ssbo_HLevel,sizeof(Htemp),Htemp);
+        if (!readSSBO(m_preComputeCache[L].ssbo_HLevel,Htemp,sizeof(Htemp)))
+        {
+            Logger<std::string>::LogError("Could not read H Level. Aborting.");
+            return false;
+        }
         rebuildH(H,Htemp);
 
         if (H.diagonal().minCoeff() < 1e-6f)
@@ -754,6 +758,31 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
             glm::vec4 b0(0,0,0,0), b1(0,0,0,0);
             float chiSum = 0.0f;
             uint32_t validPts = 0u;
+
+            if (!readSSBO(m_trackCache[L].ssbo_B0Level, &b0, sizeof(glm::vec4)))
+            {
+                Logger<std::string>::LogError("Could not read B0 Level. Aborting.");
+                return false;
+            }
+            if (!readSSBO(m_trackCache[L].ssbo_B1Level, &b1, sizeof(glm::vec4)))
+            {
+                Logger<std::string>::LogError("Could not read B1 Level. Aborting.");
+                return false;
+            }
+            if (!readSSBO(m_trackCache[L].ssbo_Chi2Level, &chiSum, sizeof(float)))
+            {
+                Logger<std::string>::LogError("Could not read chi2 Level. Aborting.");
+                return false;
+            }
+            if (!readSSBO(m_trackCache[L].ssbo_isValidLevel, &validPts, sizeof(uint32_t)))
+            {
+                Logger<std::string>::LogError("Could not read valid Level. Aborting.");
+                return false;
+            }
+
+            int nTotalMeasurements = (int)validPts * (int)m_patchArea;
+            if (nTotalMeasurements < minMeasurements) break;
+            float chiMean = chiSum / (float)nTotalMeasurements;
 
 
         }
