@@ -592,7 +592,7 @@ bool GPUCompute::readSSBO(GLuint ssbo, size_t numBytes, void* destination)
 {
     //read ssbo
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,0,(GLsizei)numBytes,GL_MAP_READ_BIT);
+    void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,0,(GLsizeiptr)numBytes,GL_MAP_READ_BIT);
     if (!ptr)
     {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -607,6 +607,7 @@ bool GPUCompute::readSSBO(GLuint ssbo, size_t numBytes, void* destination)
 
 bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
 {
+    if (!hTemp) return false;
     auto matrixTriangleIndex = [] (int a, int b)->int{int base = (a*6)-((a*(a-1))/2); return base + (b-a);};
 
     H = Eigen::Matrix<float,6,6>::Zero();
@@ -620,7 +621,7 @@ bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
         }
     }
 
-    return H.isZero();
+    return (!H.isZero());
 }
 
 bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2, int &outN)
@@ -663,7 +664,7 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
         //one H per level, read back from SSBO (precomputed)
         Eigen::Matrix<float,6,6> H = Eigen::Matrix<float,6,6>::Zero();
         float Htemp[21];
-        readSSBO(m_preComputeCache[L].ssbo_H,sizeof(Htemp),Htemp);
+        readSSBO(m_preComputeCache[L].ssbo_HLevel,sizeof(Htemp),Htemp);
         rebuildH(H,Htemp);
 
         if (H.diagonal().minCoeff() < 1e-6f)
