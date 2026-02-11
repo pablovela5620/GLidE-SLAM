@@ -69,8 +69,8 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uLevelPreCompute = glGetUniformLocation(m_preComputeShader, "uLevel");
     m_uNpointsPreCompute    = glGetUniformLocation(m_preComputeShader, "uNPoints");
     m_uRefTexPreCompute = glGetUniformLocation(m_preComputeShader, "uRefTexture");
-    m_uReduce1PreCompute = glGetUniformLocation(m_reduceH1PreCompute, "uNPoints");
-    m_uReduce2PreCompute = glGetUniformLocation(m_reduceH2PreCompute, "uNGroups");
+    m_uReduce1PreCompute = glGetUniformLocation(m_redH1PreComputeShader, "uNPoints");
+    m_uReduce2PreCompute = glGetUniformLocation(m_redH2PreComputeShader, "uNGroups");
 
     //set shader uniforms (precompute shader)
     m_uEnableAlignTrack = glGetUniformLocation(m_trackShader, "uEnableAlign");
@@ -475,7 +475,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
 
         //Second-phase: Reduce H:
         //Sum per-point partial
-        glUseProgram(m_reduceH1PreCompute);
+        glUseProgram(m_redH1PreComputeShader);
 
         glUniform1ui(m_uReduce1PreCompute, (GLint)m_nPoints);
 
@@ -587,15 +587,10 @@ bool GPUCompute::initializeTrack()
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::readBackLevelH(Eigen::Matrix<float, 6, 6> &H, GLuint ssbo, size_t numBytes)
+
+bool GPUCompute::readSSBO(GLuint ssbo, size_t numBytes, void* destination)
 {
-    if (ssbo == 0 || numBytes == 0)
-        return false;
-
-    float h[21];
-    if (numBytes != sizeof(h))
-        return false;
-
+    //read ssbo
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
     void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,0,(GLsizei)numBytes,GL_MAP_READ_BIT);
     if (!ptr)
@@ -603,41 +598,40 @@ bool GPUCompute::readBackLevelH(Eigen::Matrix<float, 6, 6> &H, GLuint ssbo, size
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         return false;
     }
+    std::memcpy(destination, ptr, numBytes);
 
-    std::memcpy(h, ptr, numBytes);
-
-    GLboolean ok = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    if (ok == GL_FALSE)
-        return false;
+    return (glGetError() == GL_NO_ERROR);
+}
 
+bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
+{
     auto matrixTriangleIndex = [] (int a, int b)->int{int base = (a*6)-((a*(a-1))/2); return base + (b-a);};
+
     H = Eigen::Matrix<float,6,6>::Zero();
     for (size_t a = 0; a < 6; ++a)
     {
         for (size_t b = a; b < 6; ++b)
         {
-            float value = h[matrixTriangleIndex(a,b)];
+            float value = hTemp[matrixTriangleIndex(a,b)];
             H(a,b) = value;
             H(b,a) = value;
         }
     }
-    return (glGetError() == GL_NO_ERROR);
+
+    return H.isZero();
 }
 
-bool GPUCompute::track(const cv::Mat pose, float outB[6], float &outChi2, int &outN)
+bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2, int &outN)
 {
-    if (pose.empty()) return false;
-    if (pose.type() != CV_32FC1) return false;
+    if (poseInitial.empty()) return false;
+    if (poseInitial.type() != CV_32FC1) return false;
     if (m_nLevels <= 0) return false;
     if (m_nPoints == 0 || m_nPoints > m_maxPoints) return false;
 
 
-    //convert pose from opencv -> glm (glsl)
-    glm::mat4 glmPose(1.0f);
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++)
-            glmPose[j][i] = pose.at<float>(i, j);
+    cv::Mat Tcw = poseInitial.clone();
 
 
     const uint enableAlign = 0;
@@ -646,11 +640,7 @@ bool GPUCompute::track(const cv::Mat pose, float outB[6], float &outChi2, int &o
     //uLevel and uK uniforms are level-dependent, so they are set in loop
     //uIteration is per iteration dependent, set in iteration loop
 
-    glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
-    glUniform1i(m_uPatchSizeTrack, m_patchSize);
-    glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
-    glUniform1ui(m_uEnableAlignTrack, (GLint)enableAlign);
-    glUniform1i(m_uNewTexTrack,0); //input texture sample from unit 0
+
 
     if (outB != nullptr)
         for (int i = 0; i < 6; i++)
@@ -671,14 +661,102 @@ bool GPUCompute::track(const cv::Mat pose, float outB[6], float &outChi2, int &o
     for (size_t L = m_nLevels-1; L > 0; --L)
     {
         //one H per level, read back from SSBO (precomputed)
-        Eigen::Matrix<float,6,6> H;
-        readBackLevelH(H,m_preComputeCache[L].ssbo_H,21);
+        Eigen::Matrix<float,6,6> H = Eigen::Matrix<float,6,6>::Zero();
+        float Htemp[21];
+        readSSBO(m_preComputeCache[L].ssbo_H,sizeof(Htemp),Htemp);
+        rebuildH(H,Htemp);
 
         if (H.diagonal().minCoeff() < 1e-6f)
         {
             Logger<std::string>::LogError("H diagonal coefficients too small! Aborting.");
             return false;
         }
+
+        //per level stats:
+        float bestChi = std::numeric_limits<float>::max();
+        cv::Mat bestT = Tcw.clone();
+        int divergeCount = 0;
+        bool hadValidIter = false;
+
+        for (size_t iteration = 0; iteration < maxIters; ++iteration)
+        {
+            glUseProgram(m_trackShader);
+            glm::mat4 glmPose(1.0f);
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                    glmPose[c][r] = Tcw.at<float>(r,c);
+
+            //uniforms per iteration
+            glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
+            glUniform1i(m_uPatchSizeTrack, m_patchSize);
+            glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
+            glUniform1ui(m_uEnableAlignTrack, (GLint)enableAlign);
+            glUniform1i(m_uLevelTrack, L);
+            glUniform1i(m_uIterationTrack, iteration);
+
+            // update intrinsics (pre-scaled) uniforms
+            float fx = m_fx * m_invScaleFactors[L];
+            float fy = m_fy * m_invScaleFactors[L];
+            float cx = m_cx * m_invScaleFactors[L];
+            float cy = m_cy * m_invScaleFactors[L];
+            glUniform4f(m_uKTrack, fx , fy, cx, cy);
+
+
+            //bind current image pyramid as sampler
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D,m_pyrTexHandles[L]);
+            glUniform1i(m_uNewTexTrack,0);
+
+
+            //BIND SSBOs for trackShader:
+            //READ-ONLY
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_MAPPOINTS,m_ssboMapPoints);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_REF_VALID,m_preComputeCache[L].ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_REF_I,m_preComputeCache[L].ssbo_I);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_REF_J,m_preComputeCache[L].ssbo_J);
+
+            //READ-WRITE
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_B0,m_trackCache[L].ssbo_B0);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_B1,m_trackCache[L].ssbo_B1);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_CHI2,m_trackCache[L].ssbo_Chi2);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_ISVALID,m_trackCache[L].ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_ALIGN,m_trackCache[L].ssbo_Align);
+
+            //Dispatch
+            glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+
+            glUseProgram(m_red1TrackShader);
+            glUniform1ui(m_uNpointsReduce1Track, (GLint)m_nPoints);
+
+            //BIND SSBOs for reduce1TrackShader:
+            //READ-ONLY
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_B0,      m_trackCache[L].ssbo_B0);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_B1,      m_trackCache[L].ssbo_B1);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_CHI2,    m_trackCache[L].ssbo_Chi2);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_ISVALID, m_trackCache[L].ssbo_isValid);
+
+            //READ-WRITE
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_B0,      m_trackCache[L].ssbo_B0Level);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_B1,      m_trackCache[L].ssbo_B1Level);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_CHI2,    m_trackCache[L].ssbo_Chi2Level);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_ISVALID, m_trackCache[L].ssbo_isValidLevel);
+
+            glDispatchCompute(1,1,1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+            glUseProgram(0);
+
+
+            //in same iteration, readback
+            glm::vec4 b0(0,0,0,0), b1(0,0,0,0);
+            float chiSum = 0.0f;
+            uint32_t validPts = 0u;
+
+
+        }
+
 
     }
 

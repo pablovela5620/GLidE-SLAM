@@ -914,7 +914,8 @@ private:
     bool initializePreCompute();
     bool initializeTrack();
 
-    bool readBackLevelH(Eigen::Matrix<float,6,6>& H, GLuint ssbo, size_t numBytes);
+    bool readSSBO(GLuint ssbo, size_t numBytes, void* destination);
+    bool rebuildH(Eigen::Matrix<float,6,6>& H, const float* hTemp);
 private:
 
     size_t m_maxPoints{1024};
@@ -955,8 +956,8 @@ private:
 
     //preCompute shader handles
     GLuint m_preComputeShader{0};
-    GLuint m_reduceH1PreCompute{0};
-    GLuint m_reduceH2PreCompute{0};
+    GLuint m_redH1PreComputeShader{0};
+    GLuint m_redH2PreComputeShader{0};
 
     //preCompute shader uniform locations
     GLint m_uPosePreCompute{-1};
@@ -984,6 +985,7 @@ private:
 
     //track shader handles
     GLuint m_trackShader{0};
+    GLuint m_red1TrackShader{0};
 
     //track uniform locations
     GLint m_uEnableAlignTrack{-1};
@@ -994,6 +996,8 @@ private:
     GLint m_uLevelTrack{-1};
     GLint m_uNewTexTrack{-1};
     GLint m_uNpointsTrack{-1};
+
+    GLint m_uNpointsReduce1Track{-1};
 
     //cache/data that is stored per level
     struct TrackCache
