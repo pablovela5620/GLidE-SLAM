@@ -905,7 +905,7 @@ class GPUCompute
         GLuint reduceH2passHandle);
     bool buildPyramid( cv::Mat& image);
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
-    bool track(const cv::Mat poseIinitial,float outB[6], float& outChi2, int& outN);
+    bool track(cv::Mat& pose, float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
     bool shutDown();
 
@@ -928,6 +928,12 @@ private:
     uint32_t m_nPoints{0};
     int m_patchArea{0};
     float m_patchCenter{0.0f};
+    uint32_t m_enableAlign{0};
+    int m_searchRadius{3};
+    glm::vec4 m_searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec4 m_rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec4 m_maxShift{0.0f, 0.0f, 0.0f, 0.0f};
+
 
     float m_scaleFactor{1.0f};
     std::vector<float> m_invScaleFactors;
@@ -998,6 +1004,10 @@ private:
     GLint m_uLevelTrack{-1};
     GLint m_uNewTexTrack{-1};
     GLint m_uNpointsTrack{-1};
+    GLint m_uSearchRadiusTrack{-1};
+    GLint m_uSearchThresholdTrack{-1};
+    GLint m_uRejectThresholdTrack{-1};
+    GLint m_uMaxShiftTrack{-1};
 
     GLint m_uNpointsReduce1Track{-1};
 

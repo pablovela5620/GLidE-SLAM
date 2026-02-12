@@ -24,11 +24,14 @@ uniform sampler2D uRefTexture;  //current level image pyramid
 //Declare SSBO at slot 1,2,3... contains array ot type vec4/uint/float...
 //buffer handle/block name, member of type, and the named variable to access in code
 //access by bufferName.member[i]. ->PointsBuffer.pos[i];
-layout(std430, binding = 0) readonly  buffer PointsBuffer       {vec4 pos[];  } inMapPoints;
-layout(std430, binding = 1) writeonly buffer ValidBuffer        {uint Valid[];} outValid;
-layout(std430, binding = 2) writeonly buffer IBuffer            {float IRef[];} outI;
-layout(std430, binding = 3) writeonly buffer JBuffer            {float J[];   } outJ;
-layout(std430, binding = 4) writeonly buffer HBuffer            {float H[];   } outH;
+//input
+layout(std430, binding = 0) readonly  buffer PointsBuffer       {vec4   pos[];  } inMapPoints;
+
+//output
+layout(std430, binding = 1) writeonly buffer ValidBuffer        {uint   Valid[];} outValid;
+layout(std430, binding = 2) writeonly buffer IBuffer            {float  IRef[]; } outI;
+layout(std430, binding = 3) writeonly buffer JBuffer            {float  J[];    } outJ;
+layout(std430, binding = 4) writeonly buffer HBuffer            {float  H[];    } outH;
 
 
 //helper functions
@@ -54,11 +57,15 @@ void main()
 {
 
     uint ptIndex = gl_GlobalInvocationID.x;
+    //check if out-of-bounds
+    float patchCenter = float(uPatchSize - 1) * 0.5;
+    //safety margin for bilinear interpolation
+    float border      = patchCenter + 2.0;
+
 
     //check invocation overflow
     if(ptIndex >= uint(uNPoints))
         return;
-
 
     vec4 ptPos = inMapPoints.pos[ptIndex];   //world pos
     vec4 ptPosCam = uPose * ptPos;          //wrt to camera
@@ -86,9 +93,7 @@ void main()
     float height = float(size.y);
 
 
-    //check if out-of-bounds
-    float patchCenter = float(uPatchSize - 1) * 0.5;
-    float border      = patchCenter + 2.0;
+
     if((u < border) || ( v < border) || (u >= (width - border)) || (v >= (height - border)))
     {
         outValid.Valid[ptIndex] = 0u;

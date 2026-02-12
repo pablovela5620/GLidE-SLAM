@@ -72,7 +72,7 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uReduce1PreCompute = glGetUniformLocation(m_redH1PreComputeShader, "uNPoints");
     m_uReduce2PreCompute = glGetUniformLocation(m_redH2PreComputeShader, "uNGroups");
 
-    //set shader uniforms (precompute shader)
+    //set shader uniforms (track shader)
     m_uEnableAlignTrack = glGetUniformLocation(m_trackShader, "uEnableAlign");
     m_uIterationTrack = glGetUniformLocation(m_trackShader, "uIteration");
     m_uPoseTrack = glGetUniformLocation(m_trackShader, "uPose");
@@ -81,6 +81,10 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uLevelTrack = glGetUniformLocation(m_trackShader, "uLevel");
     m_uNewTexTrack = glGetUniformLocation(m_trackShader, "uNewTexture");
     m_uNpointsTrack = glGetUniformLocation(m_trackShader, "uNPoints");
+    m_uSearchRadiusTrack = glGetUniformLocation(m_trackShader, "uSearchRadius");
+    m_uSearchThresholdTrack = glGetUniformLocation(m_trackShader, "uSearchThreshold");
+    m_uRejectThresholdTrack = glGetUniformLocation(m_trackShader, "uRejectThreshold");
+    m_uMaxShiftTrack = glGetUniformLocation(m_trackShader, "uMaxShift");
 
 
 
@@ -557,7 +561,7 @@ bool GPUCompute::initializeTrack()
 
         //isValid, uint 1 or 0
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValid);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(uint)), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(uint32_t)), nullptr, GL_DYNAMIC_DRAW);
 
         //Align, vec4 (keeps du,dv, valid) for each point
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Align);
@@ -579,7 +583,7 @@ bool GPUCompute::initializeTrack()
 
         //isValid, uint 1 or 0
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValidLevel);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(uint)), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(uint32_t)), nullptr, GL_DYNAMIC_DRAW);
 
     }
 
@@ -663,15 +667,15 @@ cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
     return T;
 }
 
-bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2, int &outN)
+bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 {
-    if (poseInitial.empty()) return false;
-    if (poseInitial.type() != CV_32FC1) return false;
+    if (pose.empty()) return false;
+    if (pose.type() != CV_32FC1) return false;
     if (m_nLevels <= 0) return false;
     if (m_nPoints == 0 || m_nPoints > m_maxPoints) return false;
 
 
-    cv::Mat Tcw = poseInitial.clone();
+    cv::Mat Tcw = pose.clone();
 
 
     const uint enableAlign = 0;
@@ -680,11 +684,6 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
     //uLevel and uK uniforms are level-dependent, so they are set in loop
     //uIteration is per iteration dependent, set in iteration loop
 
-
-
-    if (outB != nullptr)
-        for (int i = 0; i < 6; i++)
-            outB[i] = 0.0f;
     outChi2 = 0.0f;
     outN = 0;
 
@@ -695,6 +694,18 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
 
     float finalChi2Mean = std::numeric_limits<float>::max();
     bool anyLevelOk = false;
+
+
+    glUseProgram(m_trackShader);
+
+    //uniforms independent of iteration/Level
+    glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
+    glUniform1i(m_uPatchSizeTrack, m_patchSize);
+    glUniform1ui(m_uEnableAlignTrack, m_enableAlign);
+    glUniform1i(m_uSearchRadiusTrack, (GLuint)m_searchRadius);
+    glUniform4fv(m_uSearchThresholdTrack, 1, &m_searchThreshold[0]);
+    glUniform4fv(m_uRejectThresholdTrack, 1, &m_rejectThreshold[0]);
+    glUniform4fv(m_uMaxShiftTrack, 1, &m_maxShift[0]);
 
 
     //Main loop, course to fine levels
@@ -723,9 +734,10 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
         bool hadValidIteration = false;
         uint32_t bestValidPts = 0u;
 
+
+
         for (size_t iteration = 0; iteration < maxIters; ++iteration)
         {
-            glUseProgram(m_trackShader);
             glm::mat4 glmPose(1.0f);
             for (int r = 0; r < 4; ++r)
                 for (int c = 0; c < 4; ++c)
@@ -733,9 +745,6 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
 
             //uniforms per iteration
             glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
-            glUniform1i(m_uPatchSizeTrack, m_patchSize);
-            glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
-            glUniform1ui(m_uEnableAlignTrack, (GLuint)enableAlign);
             glUniform1i(m_uLevelTrack, L);
             glUniform1i(m_uIterationTrack, iteration);
 
@@ -791,7 +800,8 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
             glDispatchCompute(1,1,1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-            glUseProgram(0);
+            glUseProgram(m_trackShader);
+
 
 
             //in same iteration, readback
@@ -870,15 +880,11 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
             finalChi2Mean = bestChi;
             outChi2 = finalChi2Mean;
             outN = (int)(bestValidPts * (uint32_t)m_patchArea); // per point; total is validPts*patchArea (available during last iter)
-            if (outB)
-            {
-                // optional: you can fill outB with the last solved b if you want;
-                // leaving zeros is fine if you don’t actually need outB.
-            }
         }
 
     }
 
+    pose = Tcw.clone();
     return true;
 }
 
@@ -1106,7 +1112,7 @@ void Viewer::updateDirectTracking()
     if (doPrecompute)
         m_gpuCompute->preCompute(pts, pose);
     else if (doTrack)
-        m_gpuCompute->track(pose,outB,outChi2,outN);
+        m_gpuCompute->track(pose,outChi2,outN);
 }
 
 void Viewer::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)

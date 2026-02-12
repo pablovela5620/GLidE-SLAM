@@ -1,0 +1,177 @@
+#version 310 es
+
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+
+// Each invocation = one thread = one main() call (here: one map point).
+// Total invocations launched = numWorkGroupsX * local_size_x.
+// How many run truly in parallel depends on the GPU scheduler / hardware (occupancy).
+layout(local_size_x = 64,local_size_y = 1,local_size_z = 1) in;
+
+
+//Uniforms (read-only constant for all invocations)
+uniform mat4        uPose;              //camera pose
+uniform vec4        uK;                 //intrinsics (pre-scaled for each level)
+uniform int         uPatchSize;         //size of patch
+uniform int         uLevel;             //current level being processed
+uniform int         uNPoints;           //the number of map points
+uniform int         uIteration;         //current iteration
+uniform uint        uEnableAlign;       //enable extra step to align small pixel error offsets
+uniform uint        uSearchRadius;      //if enable align, how much to search for
+uniform vec4        uSearchThreshold;   //search if MSE > threshold
+uniform vec4        uRejectThreshold;   //reject if MSE > threshold
+uniform vec4        uMaxShift;          //reject if shift > threshold
+uniform sampler2D   uNewTexture;        //current level image pyramid
+
+
+//SSBO bindings (std430 -> standard for SSBOs for alignment of types:
+//vec4 16 bytes, uint 4 bytes, float 4 bytes...
+//Declare SSBO at slot 1,2,3... contains array ot type vec4/uint/float...
+//buffer handle/block name, member of type, and the named variable to access in code
+//access by bufferName.member[i]. ->PointsBuffer.pos[i];
+//input
+layout(std430, binding = 0) readonly buffer PointsBuffer       {vec4   pos[];  } inMapPoints;
+layout(std430, binding = 1) readonly buffer RefValidBuffer     {uint   Valid[];} inValid;
+layout(std430, binding = 2) readonly buffer IBuffer            {float  IRef[]; } inI;
+layout(std430, binding = 3) readonly buffer JBuffer            {float  J[];    } inJ;
+
+//output
+layout(std430, binding = 5) writeonly buffer B0Buffer           {vec4  B0[];    } outB0;
+layout(std430, binding = 6) writeonly buffer B1Buffer           {vec4  B1[];    } outB1;
+layout(std430, binding = 7) writeonly buffer Chi2Buffer         {float Chi2[];  } outChi2;
+layout(std430, binding = 8) writeonly buffer NewValidBuffer     {uint  Valid[]; } outValid;
+layout(std430, binding = 9) writeonly buffer AlignBuffer        {vec4  Align[]; } outAlign;
+
+
+//helper functions
+float fastMSE(uint idx, float u, float v)
+{
+
+    int patchArea = uPatchSize * uPatchSize;
+    uint IBase = idx * uint(patchArea);
+
+
+    float I = inI.IRef[IBase + uint(k)];
+
+    float SSE = 0.0;
+    int count = 0;
+
+
+    return SSE;
+}
+
+float fullMSE(uint idx, float u, float v)
+{
+    float SSE = 0.0;
+    int count = 0;
+
+
+    return SSE;
+}
+
+void fastSearchN()
+{
+    
+}
+
+//return bilinear interpolation (used for projection etc.)
+float bilinearSample(float u, float v)
+{
+    ivec2 size = textureSize(uNewTexture,0); //sample texture at mip level 0
+    //normalized coords. (divide by size), sample from pixel center therefore add 0.5 from corner
+    vec2 uv = (vec2(u + 0.5, v + 0.5) / vec2(size));
+    return texture (uNewTexture,uv).r; //does filtered sampling, texture has only red channel 32 bit float
+}
+
+void main()
+{
+    uint ptIndex = gl_GlobalInvocationID.x;
+
+    ivec2 size = textureSize(uNewTexture,0); //sample texture at mip level 0
+    float patchCenter = float(uPatchSize - 1) * 0.5;
+    //safety margin for bilinear interpolation
+    float border      = patchCenter + 2.0;
+    //extra search in case enable align is on
+    float borderSearch = border + float(uSearchRadius);
+
+    //check invocation overflow
+    if(ptIndex >= uint(uNPoints))
+    {
+        return;
+    }
+    //also check if RevValidBuffer?
+    if(inValid.Valid[ptIndex] == 0u)
+    {
+        outValid.Valid[ptIndex] = 0u;
+        return;
+    }
+
+    //project point to camera pose space
+    vec4 ptPos = inMapPoints.pos[ptIndex];   //world pos
+    vec4 ptPosCam = uPose * ptPos;          //wrt to camera
+    float X = ptPosCam.x;
+    float Y = ptPosCam.y;
+    float Z = ptPosCam.z;
+
+    //check point behind camera
+    if(Z <= 0.0)
+    {
+        outValid.Valid[ptIndex] = 0u;
+        return;
+    }
+
+    //project point to u,v image space
+    float fx = uK.x;
+    float fy = uK.y;
+    float cx = uK.z;
+    float cy = uK.w;
+
+    //original point projection
+    float u0 = fx * (X / Z) + cx;
+    float v0 = fy * (Y / Z) + cy;
+
+
+
+    //Do alignment search?
+    if(uEnableAlign == 1u)
+    {
+        //check border safety with extra shift
+        if((u0 < borderSearch || v0 < borderSearch) ||
+        (u0 >= size.x - borderSearch|| v0 >= size.y - borderSearch))
+        {
+            outAlign.Align[ptIndex] = vec4(0,0,0,0);
+            outValid.Valid[ptIndex] = 0u;
+            return;
+        }
+
+        int nSearched = 0;
+        int nValid = 0;
+        float sumShift = 0.0f;
+        float worstShift = 0.0f;
+
+        float mse = fastMSE(ptIndex,u0,v0);
+        uint besdDu = 0;
+        uint bestDv = 0;
+        float bestFastMSE = mse;
+        float secondBest = 100000;
+
+        //used for thresholds, later needs to be properly expanded for image pyramids > 4
+        int Lthresholds = (level < 0) ? 0 : ((level > 3) ? 3 : level);
+
+        float searchThreshold = uSearchThreshold[Lthresholds];
+        float rejectThreshold = uRejectThreshold[Lthresholds];
+        float maxShift        = uMaxShift[Lthresholds];
+
+        if(mse > searchThreshold)
+        {
+            ++nSearched;
+
+        }
+
+    }
+
+
+
+}
