@@ -46,8 +46,18 @@ layout(std430, binding = 9) writeonly buffer AlignBuffer        {vec4  Align[]; 
 
 
 //helper functions
-float fastMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
+//return bilinear interpolation (used for projection etc.)
+float bilinearSample(float u, float v)
 {
+    ivec2 size = textureSize(uNewTexture,0); //sample texture at mip level 0
+    //normalized coords. (divide by size), sample from pixel center therefore add 0.5 from corner
+    vec2 uv = (vec2(u + 0.5, v + 0.5) / vec2(size));
+    return texture (uNewTexture,uv).r; //does filtered sampling, texture has only red channel 32 bit float
+}
+
+float fastMSE(in uint idx, float u, float v, uint patchSize)
+{
+    uint patchArea = patchSize * patchSize;
     //sample 3 x 3 pixels only from patch, offset from center
     float patchCenter = float(patchSize - 1u) * 0.5;
 
@@ -55,15 +65,15 @@ float fastMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
     if (step < 1) step = 1;
     const int offs[3] = int[3](-step, 0, step);
 
-    uint IBase = idx * patchArea;
+    uint IBase = idx * uint(patchArea);
 
     float SSE = 0.0;
     int count = 0;
 
     //search patch
-    for(uint y = 0; y < 3; ++y)
+    for(int y = 0; y < 3; ++y)
     {
-        for(uint x = 0; x < 3; ++x)
+        for(int x = 0; x < 3; ++x)
         {
             int px = offs[x] + int(patchCenter);
             int py = offs[y] + int(patchCenter);
@@ -87,24 +97,25 @@ float fastMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
     return SSE;
 }
 
-float fullMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
+float fullMSE(in uint idx, float u, float v, uint patchSize)
 {
+    uint patchArea = patchSize * patchSize;
     float patchCenter = float(patchSize - 1u) * 0.5;
-    uint IBase = idx * patchArea;
+    uint IBase = idx * uint(patchArea);
 
     float SSE = 0.0;
     int count = 0;
 
     //search patch
-    for(uint y = 0; y < patchSize; ++y)
+    for(int y = 0; y < patchSize; ++y)
     {
-        for(uint x = 0; x < patchSize; ++x)
+        for(int x = 0; x < patchSize; ++x)
         {
             uint pIdx = uint(y) * patchSize + uint(x);
             float IRef = inI.IRef[IBase + pIdx];
 
             float ux = u + float(x) - patchCenter;
-            float vx = v + float(x) - patchCenter;
+            float vx = v + float(y) - patchCenter;
             float INew = bilinearSample(ux, vx);
 
             float residual = INew - IRef;
@@ -120,7 +131,7 @@ float fullMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
 }
 
 void fastSearchN(in uint idx, in int searchRadius, in uint patchSize,
-float u, float v, out uint outDu, out uint outDV, out float bestScore, out float secondBestScore)
+float u, float v, out int outDu, out int outDv, out float bestScore, out float secondBestScore)
 {
     //set to maximum values
     bestScore = 1.0/0.0;
@@ -136,13 +147,13 @@ float u, float v, out uint outDu, out uint outDV, out float bestScore, out float
         for(int du = -searchRadius; du <= searchRadius; ++du)
         {
             //check score for this offset
-            float score = fastMSE(idx, u+float(du), v+float(dv));
+            float score = fastMSE(idx, u+float(du), v+float(dv),patchSize);
             if(score < bestScore)
             {
                 secondBestScore = bestScore;
                 bestScore = score;
                 outDu = du;
-                outDV = dv;
+                outDv = dv;
             }
             else if(score < secondBestScore)
             {
@@ -152,14 +163,7 @@ float u, float v, out uint outDu, out uint outDV, out float bestScore, out float
     }
 }
 
-//return bilinear interpolation (used for projection etc.)
-float bilinearSample(float u, float v)
-{
-    ivec2 size = textureSize(uNewTexture,0); //sample texture at mip level 0
-    //normalized coords. (divide by size), sample from pixel center therefore add 0.5 from corner
-    vec2 uv = (vec2(u + 0.5, v + 0.5) / vec2(size));
-    return texture (uNewTexture,uv).r; //does filtered sampling, texture has only red channel 32 bit float
-}
+
 
 void main()
 {
@@ -167,10 +171,16 @@ void main()
 
     ivec2 size = textureSize(uNewTexture,0); //sample texture at mip level 0
     float patchCenter = float(uPatchSize - 1) * 0.5;
+    uint patchSize = uPatchSize;
     //safety margin for bilinear interpolation
     float border      = patchCenter + 2.0;
+
+    float searchRadius = float(uSearchRadius);
+
     //extra search in case enable align is on
-    float borderSearch = border + float(uSearchRadius);
+    float borderSearch = border + searchRadius;
+
+    int level = uLevel;
 
     //check invocation overflow
     if(ptIndex >= uint(uNPoints))
@@ -215,7 +225,7 @@ void main()
     {
         //check border safety with extra shift
         if((u0 < borderSearch || v0 < borderSearch) ||
-        (u0 >= size.x - borderSearch|| v0 >= size.y - borderSearch))
+        (u0 >= float(size.x) - borderSearch|| v0 >= float(size.y) - borderSearch))
         {
             outAlign.Align[ptIndex] = vec4(0,0,0,0);
             outValid.Valid[ptIndex] = 0u;
@@ -227,11 +237,11 @@ void main()
         float sumShift = 0.0f;
         float worstShift = 0.0f;
 
-        float mse = fastMSE(ptIndex,u0,v0);
-        uint besdDu = 0;
-        uint bestDv = 0;
-        float bestFastMSE = mse;
-        float secondBest = 100000;
+        float mse = fastMSE(ptIndex,u0,v0, patchSize);
+        int besdDu = 0;
+        int bestDv = 0;
+        float bestScore = mse;
+        float secondBestScore = 100000;
 
         //used for thresholds, later needs to be properly expanded for image pyramids > 4
         int Lthresholds = (level < 0) ? 0 : ((level > 3) ? 3 : level);
@@ -240,10 +250,33 @@ void main()
         float rejectThreshold = uRejectThreshold[Lthresholds];
         float maxShift        = uMaxShift[Lthresholds];
 
+        //if error too high, do neighbor searches
         if(mse > searchThreshold)
         {
             ++nSearched;
+            fastSearchN(ptIndex, int(searchRadius), patchSize, u0, v0,bestDu, bestDv,bestScore,secondBestScore);
+        }
 
+        //check total shift, avoid sqrt
+        float shift = besdDu * besdDu + bestDv * bestDv;
+
+        //check if patch is unique
+        uint ambiguous = 0u;
+        float ratio = bestScore / secondBestScore;
+        if(ratio > 0.95)
+            ambiguous = 1u;
+
+        //discard
+        if(ambiguous == 1u || shift > (float(maxShift*maxShift)) || bestScore > rejectThreshold)
+        {
+            outAlign.Align[ptIndex] = vec4(0,0,0,0);
+            outValid.Valid[ptIndex] = 0u;
+            return;
+        }
+        else
+        {
+            outAlign.Align[ptIndex] = vec4(bestDu,bestDv,1u,bestScore);
+            outValid.Valid[ptIndex] = 1u;
         }
 
     }
