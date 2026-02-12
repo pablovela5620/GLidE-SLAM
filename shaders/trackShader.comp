@@ -46,23 +46,27 @@ layout(std430, binding = 9) writeonly buffer AlignBuffer        {vec4  Align[]; 
 
 
 //helper functions
-float fastMSE(uint idx, float u, float v)
+float fastMSE(in uint idx, float u, float v)
 {
 
     int patchArea = uPatchSize * uPatchSize;
     uint IBase = idx * uint(patchArea);
 
-
     float I = inI.IRef[IBase + uint(k)];
-
     float SSE = 0.0;
     int count = 0;
 
+    //search patch
+    for(int k = 0; k < patchSize; ++k)
+    {
+
+
+    }
 
     return SSE;
 }
 
-float fullMSE(uint idx, float u, float v)
+float fullMSE(in uint idx, float u, float v)
 {
     float SSE = 0.0;
     int count = 0;
@@ -71,9 +75,37 @@ float fullMSE(uint idx, float u, float v)
     return SSE;
 }
 
-void fastSearchN()
+void fastSearchN(in uint idx, in int searchRadius, in uint patchSize,
+float u, float v, out uint outDu, out uint outDV, out float bestScore, out float secondBestScore)
 {
-    
+    //set to maximum values
+    bestScore = 1.0/0.0;
+    secondBestScore = 1.0/0.0;
+
+    //output shifts
+    outDu = 0;
+    outDv = 0;
+
+    //search radius u,v
+    for(int dv = -searchRadius; dv <= searchRadius; ++dv)
+    {
+        for(int du = -searchRadius; du <= searchRadius; ++du)
+        {
+            //check score for this offset
+            float score = fastMSE(idx, u+float(du), v+float(dv));
+            if(score < bestScore)
+            {
+                secondBestScore = bestScore;
+                bestScore = score;
+                outDu = du;
+                outDV = dv;
+            }
+            else if(score < secondBestScore)
+            {
+                secondBestScore = score;
+            }
+        }
+    }
 }
 
 //return bilinear interpolation (used for projection etc.)
