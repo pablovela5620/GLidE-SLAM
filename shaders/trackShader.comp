@@ -46,31 +46,75 @@ layout(std430, binding = 9) writeonly buffer AlignBuffer        {vec4  Align[]; 
 
 
 //helper functions
-float fastMSE(in uint idx, float u, float v)
+float fastMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
 {
+    //sample 3 x 3 pixels only from patch, offset from center
+    float patchCenter = float(patchSize - 1u) * 0.5;
 
-    int patchArea = uPatchSize * uPatchSize;
-    uint IBase = idx * uint(patchArea);
+    int step = int(patchCenter) - 1;
+    if (step < 1) step = 1;
+    const int offs[3] = int[3](-step, 0, step);
 
-    float I = inI.IRef[IBase + uint(k)];
+    uint IBase = idx * patchArea;
+
     float SSE = 0.0;
     int count = 0;
 
     //search patch
-    for(int k = 0; k < patchSize; ++k)
+    for(uint y = 0; y < 3; ++y)
     {
+        for(uint x = 0; x < 3; ++x)
+        {
+            int px = offs[x] + int(patchCenter);
+            int py = offs[y] + int(patchCenter);
+            uint pIdx = uint(py) * patchSize + uint(px);
 
+            float IRef = inI.IRef[IBase + pIdx];
 
+            float ux = u + float(offs[x]);
+            float vx = v + float(offs[y]);
+            float INew = bilinearSample(ux, vx);
+
+            float residual = INew - IRef;
+            SSE += residual * residual;
+            ++count;
+        }
     }
+
+    if(count > 0)
+    SSE /= float(count);
 
     return SSE;
 }
 
-float fullMSE(in uint idx, float u, float v)
+float fullMSE(in uint idx, float u, float v, uint patchArea, uint patchSize)
 {
+    float patchCenter = float(patchSize - 1u) * 0.5;
+    uint IBase = idx * patchArea;
+
     float SSE = 0.0;
     int count = 0;
 
+    //search patch
+    for(uint y = 0; y < patchSize; ++y)
+    {
+        for(uint x = 0; x < patchSize; ++x)
+        {
+            uint pIdx = uint(y) * patchSize + uint(x);
+            float IRef = inI.IRef[IBase + pIdx];
+
+            float ux = u + float(x) - patchCenter;
+            float vx = v + float(x) - patchCenter;
+            float INew = bilinearSample(ux, vx);
+
+            float residual = INew - IRef;
+            SSE += residual * residual;
+            ++count;
+        }
+    }
+
+    if(count > 0)
+    SSE /= float(patchArea);
 
     return SSE;
 }
