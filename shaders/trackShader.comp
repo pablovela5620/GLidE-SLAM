@@ -238,7 +238,7 @@ void main()
         float worstShift = 0.0f;
 
         float mse = fastMSE(ptIndex,u0,v0, patchSize);
-        int besdDu = 0;
+        int bestDu = 0;
         int bestDv = 0;
         float bestScore = mse;
         float secondBestScore = 100000;
@@ -258,7 +258,7 @@ void main()
         }
 
         //check total shift, avoid sqrt
-        float shift = besdDu * besdDu + bestDv * bestDv;
+        float shift = bestDu * bestDu + bestDv * bestDv;
 
         //check if patch is unique
         uint ambiguous = 0u;
@@ -275,7 +275,7 @@ void main()
         }
         else
         {
-            outAlign.Align[ptIndex] = vec4(bestDu,bestDv,1u,bestScore);
+            outAlign.Align[ptIndex] = vec4(float(bestDu),float(bestDv),1.0,bestScore);
             outValid.Valid[ptIndex] = 1u;
         }
 
