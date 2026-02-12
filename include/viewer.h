@@ -916,6 +916,8 @@ private:
 
     bool readSSBO(GLuint ssbo, void* destination,size_t numBytes);
     bool rebuildH(Eigen::Matrix<float,6,6>& H, const float* hTemp);
+    cv::Matx44f se3exp(const cv::Matx<float,6,1>& xi);
+
 private:
 
     size_t m_maxPoints{1024};

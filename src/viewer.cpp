@@ -587,7 +587,6 @@ bool GPUCompute::initializeTrack()
     return (glGetError() == GL_NO_ERROR);
 }
 
-
 bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
 {
     //read ssbo
@@ -622,6 +621,46 @@ bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
     }
 
     return (!H.isZero());
+}
+
+cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
+{
+    cv::Vec3f w(xi(0), xi(1), xi(2));   // omega
+    cv::Vec3f v(xi(3), xi(4), xi(5));   // v (translation twist)
+
+    float th = cv::norm(w);
+    cv::Matx33f I = cv::Matx33f::eye();
+    cv::Matx33f W(   0,   -w[2],  w[1],
+                   w[2],     0,  -w[0],
+                  -w[1],  w[0],     0 );
+    cv::Matx33f W2 = W * W;
+
+    cv::Matx33f R = I, V = I;
+
+    if (th > 1e-8f)
+    {
+        float s_over_th   = std::sin(th) / th;
+        float one_mc_over = (1.f - std::cos(th)) / (th*th);
+        float th_ms_over  = (th - std::sin(th)) / (th*th*th);
+
+        R = I + s_over_th * W + one_mc_over * W2;
+        V = I + one_mc_over * W + th_ms_over * W2;
+    }
+    else
+    {
+        // series: R ≈ I + W,  V ≈ I + 0.5 W + (1/6) W^2
+        R = I + W;
+        V = I + 0.5f * W + (1.f/6.f) * W2;
+    }
+
+    cv::Vec3f t = V * v;
+
+    cv::Matx44f T = cv::Matx44f::eye();
+    for (int i=0;i<3;i++)
+        for (int j=0;j<3;j++)
+            T(i,j) = R(i,j);
+    T(0,3) = t[0]; T(1,3) = t[1]; T(2,3) = t[2];
+    return T;
 }
 
 bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2, int &outN)
@@ -659,7 +698,7 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
 
 
     //Main loop, course to fine levels
-    for (size_t L = m_nLevels-1; L > 0; --L)
+    for (int L = m_nLevels-1; L >= 0; --L)
     {
         //one H per level, read back from SSBO (precomputed)
         Eigen::Matrix<float,6,6> H = Eigen::Matrix<float,6,6>::Zero();
@@ -681,7 +720,8 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
         float bestChi = std::numeric_limits<float>::max();
         cv::Mat bestT = Tcw.clone();
         int divergeCount = 0;
-        bool hadValidIter = false;
+        bool hadValidIteration = false;
+        uint32_t bestValidPts = 0u;
 
         for (size_t iteration = 0; iteration < maxIters; ++iteration)
         {
@@ -695,7 +735,7 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
             glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
             glUniform1i(m_uPatchSizeTrack, m_patchSize);
             glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
-            glUniform1ui(m_uEnableAlignTrack, (GLint)enableAlign);
+            glUniform1ui(m_uEnableAlignTrack, (GLuint)enableAlign);
             glUniform1i(m_uLevelTrack, L);
             glUniform1i(m_uIterationTrack, iteration);
 
@@ -785,11 +825,59 @@ bool GPUCompute::track(const cv::Mat poseInitial, float outB[6], float &outChi2,
             float chiMean = chiSum / (float)nTotalMeasurements;
 
 
+            //Chi is expected to decrease per iteration, if not use last best pose
+            if (chiMean < bestChi)
+            {
+                bestChi = chiMean;
+                bestT = Tcw.clone();
+                bestValidPts = validPts;
+                divergeCount = 0;
+            }
+            else
+            {
+                ++divergeCount;
+                if (divergeCount >= 3)
+                {
+                    Tcw = bestT.clone();
+                    hadValidIteration = true;
+                    break;
+                }
+            }
+
+            Eigen::Matrix<float,6,1> b;
+            b << b0.x, b0.y, b0.z, b0.w, b1.x, b1.y;
+
+            Eigen::Matrix<float,6,1> delta = H.ldlt().solve(b);
+            if (!delta.allFinite()) break;
+
+            hadValidIteration = true;
+
+            cv::Matx<float,6,1> xi(delta(3), delta(4), delta(5), delta(0), delta(1), delta(2));
+            Tcw = Tcw * cv::Mat(se3exp(xi));
+
+            if (delta.norm() < epsNorm)
+                break;
         }
 
+        if (!hadValidIteration)
+            return false;
+
+        anyLevelOk = true;
+        Tcw = bestT.clone();
+
+        if (L == 0)
+        {
+            finalChi2Mean = bestChi;
+            outChi2 = finalChi2Mean;
+            outN = (int)(bestValidPts * (uint32_t)m_patchArea); // per point; total is validPts*patchArea (available during last iter)
+            if (outB)
+            {
+                // optional: you can fill outB with the last solved b if you want;
+                // leaving zeros is fine if you don’t actually need outB.
+            }
+        }
 
     }
-
 
     return true;
 }
