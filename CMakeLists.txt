@@ -120,7 +120,7 @@ add_library(${PROJECT_NAME} SHARED
         src/ImageHandler.cc
         include/Logger.h
         include/GPUEngine.h
-        src/viewer.cpp
+        src/GPUEngine.cpp
         ${PROJECT_SOURCE_DIR}/Thirdparty/glad/src/glad.c
 )
 

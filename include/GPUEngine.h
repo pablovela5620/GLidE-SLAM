@@ -894,6 +894,7 @@ class GPUCompute
     public:
 
     GPUCompute(){};
+    GPUCompute(GPUEngineSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
     void initialize(int w,int h,int levels, int patchSize, float scaleFactor,
         float fx, float fy, float cx, float cy);
 
@@ -940,6 +941,8 @@ private:
     float m_cx{0.0f};
     float m_cy{0.0f};
 
+    GPUEngineSettings* m_GPUEngineSettings{nullptr};
+private:
     std::vector<GLuint> m_pyrTexHandles;
     std::vector<GLuint> m_tempTexHandles;
     std::vector<GLuint> m_blurTexHandles;

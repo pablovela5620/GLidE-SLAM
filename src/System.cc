@@ -100,9 +100,9 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     if(bUseViewer)
     {
         //Read viewer settings files:
-        mpSlamSettings = new GPUEngineSettings();
-        ReadConfigFile("Examples/Monocular/GPUConfig.yaml", mpSlamSettings);
-        mpGPUEngine = new GPUEngine(this, mpSlamSettings);
+        mpGPUEngineSettings = new GPUEngineSettings();
+        ReadConfigFile("Examples/Monocular/GPUConfig.yaml", mpGPUEngineSettings);
+        mpGPUEngine = new GPUEngine(this, mpGPUEngineSettings);
         if (mpMap)
             mpGPUEngine->setMap(mpMap);
         mptGPUEngine = new thread(&GPUEngine::run, mpGPUEngine);

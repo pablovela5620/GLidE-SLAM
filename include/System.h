@@ -63,7 +63,7 @@ public:
     // Initialize the SLAM system. It launches the Local Mapping, Loop Closing and Viewer threads.
     System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor, const bool bUseViewer = true);
 
-    ~System(){if (mpSlamSettings) delete mpSlamSettings; mpSlamSettings = nullptr;}
+    ~System(){if (mpGPUEngineSettings) delete mpGPUEngineSettings; mpGPUEngineSettings = nullptr;}
     // Proccess the given stereo frame. Images must be synchronized and rectified.
     // Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
     // Returns the camera pose (empty if tracking fails).
@@ -182,7 +182,7 @@ private:
 
 
     //added viewer for viewer settings
-    GPUEngineSettings* mpSlamSettings;
+    GPUEngineSettings* mpGPUEngineSettings;
 };
 
 }// namespace ORB_SLAM

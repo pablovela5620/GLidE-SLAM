@@ -2,6 +2,7 @@
 
 void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFactor,float fx, float fy, float cx, float cy)
 {
+    //TODO: Take all from gpuEngineSettings
     m_width = w;
     m_height = h;
     m_nLevels = levels;
