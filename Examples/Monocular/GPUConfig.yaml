@@ -33,3 +33,17 @@ DirTrackParams.runDirectTracking: 0
 DirTrackParams.nLevels:           8
 DirTrackParams.patchSize:         7
 DirTrackParams.scaleFactor:     1.2
+
+DirTrackParams.fx: 535.4
+DirTrackParams.fy: 539.2
+DirTrackParams.cx: 320.1
+DirTrackParams.cy: 247.6
+
+DirTrackParams.maxPoints: 1024
+DirTrackParams.enableAlign: 1
+DirTrackParams.searchRadius: 3
+DirTrackParams.huberK: 0.08
+
+DirTrackParams.searchThreshold: [0.012,0.018,0.025,0.035]
+DirTrackParams.rejectThreshold: [0.025,0.035,0.050,0.070]
+DirTrackParams.maxShift: [3.0,4.0,5.0,6.0]

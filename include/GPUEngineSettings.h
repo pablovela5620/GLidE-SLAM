@@ -1,6 +1,6 @@
 #pragma once
-#ifndef SLAM_PARAMS_H
-#define SLAM_PARAMS_H
+#ifndef GPU_ENGINE_SETTINGS
+#define GPU_ENGINE_SETTINGS
 
 #include <vector>
 #include <string>
@@ -12,14 +12,14 @@ struct GPUEngineSettings
 	{
 		if (this != &other)
 		{
-            viewerParams    = other.viewerParams;
-            viewerParams    = other.viewerParams;
+            gpuEngineParams    = other.gpuEngineParams;
+            gpuEngineParams    = other.gpuEngineParams;
 			directTrackParams = other.directTrackParams;
 		}
 		return *this;
 	}
 
-	struct ViewerParams
+	struct GPUEngineParams
     {
 	    int forceOriginStart{1};
 	    int runViewer{1};
@@ -54,12 +54,12 @@ struct GPUEngineSettings
         glm::vec3 camRight { 1.0f,0.0f,0.0f };
         glm::vec3 camUp    { 0.0f,1.0f,0.0f };
         glm::vec3 camTarget{ 0.0f,0.0f,1.0f };
-    }viewerParams;
+    }gpuEngineParams;
 
 	struct DirectTrackingParams
 	{
-		int sourceImageWidth{640};
-		int sourceImageHeight{480};
+		int width{640};
+		int height{480};
 		float fx{535.4};
 		float fy{539.2};
 		float cx{320.1};
@@ -69,17 +69,17 @@ struct GPUEngineSettings
 		int patchSize{7};
 		float scaleFactor{1.2f};
 
-		size_t m_maxPoints{1024};
-		uint32_t m_enableAlign{0};
-		int m_searchRadius{3};
-		float m_humberK{0.08f};
-		glm::vec4 m_searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
-		glm::vec4 m_rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
-		glm::vec4 m_maxShift{0.0f, 0.0f, 0.0f, 0.0f};
+		int maxPoints{1024};
+		int enableAlign{0};
+		int searchRadius{3};
+		float humberK{0.08f};
+		glm::vec4 searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
+		glm::vec4 rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
+		glm::vec4 maxShift{0.0f, 0.0f, 0.0f, 0.0f};
 
 
 	}directTrackParams;
 
 };
 
-#endif // !SLAM_PARAMS_H
+#endif // !GPU_ENGINE_SETTINGS

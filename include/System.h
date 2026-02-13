@@ -126,7 +126,8 @@ public:
     std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
 
     static glm::vec3 readInVector(cv::FileStorage& fs, const std::string& parameter);
-    static bool ReadConfigFile(const std::string& path, GPUEngineSettings* slamSettings);
+    static glm::vec4 readInVector(cv::FileStorage& fs, const std::string& parameter, float defaultW);
+    static bool ReadConfigFile(const std::string& path, GPUEngineSettings* GPUEngineSettings);
 private:
 
     // Input sensor

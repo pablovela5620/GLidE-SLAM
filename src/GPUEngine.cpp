@@ -1,19 +1,19 @@
 #include "GPUEngine.h"
 
-void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFactor,float fx, float fy, float cx, float cy)
+void GPUCompute::initialize()
 {
     //TODO: Take all from gpuEngineSettings
-    m_width = w;
-    m_height = h;
-    m_nLevels = levels;
-    m_patchSize = patchSize;
-    m_patchCenter = (m_patchSize - 1) * 0.5f;
+    m_width = m_GPUEngineSettings->directTrackParams.width;
+    m_height = m_GPUEngineSettings->directTrackParams.height;
+    m_nLevels = m_GPUEngineSettings->directTrackParams.nLevels;
+    m_patchSize = m_GPUEngineSettings->directTrackParams.patchSize;
+    m_patchCenter = static_cast<float>((m_patchSize - 1)) * 0.5f;
     m_patchArea = m_patchSize * m_patchSize;
-    m_scaleFactor = scaleFactor;
-    m_fx = fx;
-    m_fy = fy;
-    m_cx = cx;
-    m_cy = cy;
+    m_scaleFactor = m_GPUEngineSettings->directTrackParams.scaleFactor;
+    m_fx = m_GPUEngineSettings->directTrackParams.fx;
+    m_fy = m_GPUEngineSettings->directTrackParams.fy;
+    m_cx = m_GPUEngineSettings->directTrackParams.cx;
+    m_cy = m_GPUEngineSettings->directTrackParams.cy;
 
     m_enableAlign = 1u;
     m_searchRadius = 3;
@@ -983,23 +983,23 @@ bool GPUEngine::initialize()
 {
 
     m_isInitialized = false;
-    m_width = m_slamViewerSettings->viewerParams.width;
-    m_height = m_slamViewerSettings->viewerParams.height;
+    m_width = m_GPUEngineSettings->gpuEngineParams.width;
+    m_height = m_GPUEngineSettings->gpuEngineParams.height;
 
-    m_windowFramesTitle = m_slamViewerSettings->viewerParams.windowFramesTitle;
-    m_windowMapTitle = m_slamViewerSettings->viewerParams.windowMapTitle;
+    m_windowFramesTitle = m_GPUEngineSettings->gpuEngineParams.windowFramesTitle;
+    m_windowMapTitle = m_GPUEngineSettings->gpuEngineParams.windowMapTitle;
 
     //color
-    m_currentKeyFrameColor = m_slamViewerSettings->viewerParams.currentKeyFrameColor;
-    m_AllKeyFrameColor = m_slamViewerSettings->viewerParams.allKeyFrameColor;
-    m_tweenFrameDirectColor = m_slamViewerSettings->viewerParams.tweenFrameDirectColor;
-    m_tweenFrameColor = m_slamViewerSettings->viewerParams.tweenFrameColor;
-    m_mapPointsColor = m_slamViewerSettings->viewerParams.mapPointsColor;
-    m_mapPointsRefColor = m_slamViewerSettings->viewerParams.mapPointsRefColor;
-    m_featureLinesColor = m_slamViewerSettings->viewerParams.featureLinesColor;
+    m_currentKeyFrameColor = m_GPUEngineSettings->gpuEngineParams.currentKeyFrameColor;
+    m_AllKeyFrameColor = m_GPUEngineSettings->gpuEngineParams.allKeyFrameColor;
+    m_tweenFrameDirectColor = m_GPUEngineSettings->gpuEngineParams.tweenFrameDirectColor;
+    m_tweenFrameColor = m_GPUEngineSettings->gpuEngineParams.tweenFrameColor;
+    m_mapPointsColor = m_GPUEngineSettings->gpuEngineParams.mapPointsColor;
+    m_mapPointsRefColor = m_GPUEngineSettings->gpuEngineParams.mapPointsRefColor;
+    m_featureLinesColor = m_GPUEngineSettings->gpuEngineParams.featureLinesColor;
 
-    m_scaleFactor = m_slamViewerSettings->viewerParams.scaleFactor;
-    m_featuresMaxDepth = m_slamViewerSettings->viewerParams.featuresMaxDepth;
+    m_scaleFactor = m_GPUEngineSettings->gpuEngineParams.scaleFactor;
+    m_featuresMaxDepth = m_GPUEngineSettings->gpuEngineParams.featuresMaxDepth;
 
     m_featuresMaxDepth *= m_scaleFactor;
 
@@ -1025,22 +1025,22 @@ bool GPUEngine::initialize()
     m_currentKeyFrameGfx->initialize();
 
     //initialize GPUCompute
-    m_gpuCompute = new GPUCompute();
-    const int w = m_slamViewerSettings->directTrackParams.sourceImageWidth;
-    const int h = m_slamViewerSettings->directTrackParams.sourceImageHeight;
+    m_gpuCompute = new GPUCompute(m_GPUEngineSettings);
+    const int w = m_GPUEngineSettings->directTrackParams.width;
+    const int h = m_GPUEngineSettings->directTrackParams.height;
 
-    const float fx = m_slamViewerSettings->directTrackParams.fx;
-    const float fy = m_slamViewerSettings->directTrackParams.fy;
-    const float cx = m_slamViewerSettings->directTrackParams.cx;
-    const float cy = m_slamViewerSettings->directTrackParams.cy;
+    const float fx = m_GPUEngineSettings->directTrackParams.fx;
+    const float fy = m_GPUEngineSettings->directTrackParams.fy;
+    const float cx = m_GPUEngineSettings->directTrackParams.cx;
+    const float cy = m_GPUEngineSettings->directTrackParams.cy;
 
-    const int nLevels = m_slamViewerSettings->directTrackParams.nLevels;
-    const int patchSize = m_slamViewerSettings->directTrackParams.patchSize;
-    const float scaleFactor = m_slamViewerSettings->directTrackParams.scaleFactor;
+    const int nLevels = m_GPUEngineSettings->directTrackParams.nLevels;
+    const int patchSize = m_GPUEngineSettings->directTrackParams.patchSize;
+    const float scaleFactor = m_GPUEngineSettings->directTrackParams.scaleFactor;
 
 
 
-    m_gpuCompute->initialize(w, h, nLevels, patchSize, scaleFactor,fx,fy,cx,cy);
+    m_gpuCompute->initialize();
 
     m_gpuCompute->setShaders(m_shaders);
 
@@ -2015,8 +2015,8 @@ void GPUEngine::initializeCamera()
 
     m_activeCamera = std::make_shared<Camera>(m_width, m_height,camPos,camTarget,up);
 
-    bool follow = m_slamViewerSettings->viewerParams.cameraFollow;
-    const float followDistance = m_slamViewerSettings->viewerParams.followDistance;
+    bool follow = m_GPUEngineSettings->gpuEngineParams.cameraFollow;
+    const float followDistance = m_GPUEngineSettings->gpuEngineParams.followDistance;
     m_activeCamera->setFollow(follow, followDistance);
 }
 

@@ -1,5 +1,5 @@
-#ifndef VIEWER_H
-#define VIEWER_H
+#ifndef GPU_ENGINE
+#define GPU_ENGINE
 
 //system
 #include <vector>
@@ -895,8 +895,7 @@ class GPUCompute
 
     GPUCompute(){};
     GPUCompute(GPUEngineSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
-    void initialize(int w,int h,int levels, int patchSize, float scaleFactor,
-        float fx, float fy, float cx, float cy);
+    void initialize();
 
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
 
@@ -1076,7 +1075,7 @@ class GPUEngine
 {
 public:
     //TODO: separeate methods into private/public
-    GPUEngine(ORB_SLAM2::System* system, GPUEngineSettings* slamSettings) : m_system(system), m_slamViewerSettings(slamSettings){};
+    GPUEngine(ORB_SLAM2::System* system, GPUEngineSettings* slamSettings) : m_system(system), m_GPUEngineSettings(slamSettings){};
 
     bool initialize();
     void run();
@@ -1219,7 +1218,7 @@ private:
     glm::mat4 m_pMatrix{glm::mat4(1.0f)};
     glm::mat4 m_mvpMatrix{glm::mat4(1.0f)};
 
-    GPUEngineSettings *m_slamViewerSettings{NULL};
+    GPUEngineSettings *m_GPUEngineSettings{NULL};
 
     std::mutex mMutexUpdate;
     std::condition_variable m_cv;
@@ -1268,4 +1267,4 @@ private:
 };
 
 
-#endif //VIEWER_H
+#endif //GPU_ENGINE
