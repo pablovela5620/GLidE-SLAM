@@ -896,14 +896,11 @@ class GPUCompute
     GPUCompute(){};
     void initialize(int w,int h,int levels, int patchSize, float scaleFactor,
         float fx, float fy, float cx, float cy);
-    bool setShaders(GLuint convert8To32Handle,
-        GLuint gauss32FHandle,
-        GLuint resizeHandle,
-        GLuint copySSBOHandle,
-        GLuint preComputeHandle,
-        GLuint reduceH1passHandle,
-        GLuint reduceH2passHandle);
+
+    bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
+
     bool buildPyramid( cv::Mat& image);
+
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
     bool track(cv::Mat& pose, float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
@@ -1033,17 +1030,17 @@ private:
 
     //trackShader SSBO binding layout
     // Inputs:
-    static const GLuint BIND_MAPPOINTS      {0}; // m_ssboMapPoints (vec4 pos[])
-    static const GLuint BIND_REF_VALID      {1}; // preComputeCache[L].ssbo_isValid (uint[])
-    static const GLuint BIND_REF_I          {2}; // preComputeCache[L].ssbo_I (float[])
-    static const GLuint BIND_REF_J          {3}; // preComputeCache[L].ssbo_J (float[])
+    static const GLuint TRACK_IN_MAPPOINTS      {0}; // m_ssboMapPoints (vec4 pos[])
+    static const GLuint TRACK_IN_VALID          {1}; // preComputeCache[L].ssbo_isValid (uint[])
+    static const GLuint TRACK_IN_I              {2}; // preComputeCache[L].ssbo_I (float[])
+    static const GLuint TRACK_IN_J             {3}; // preComputeCache[L].ssbo_J (float[])
 
     // Outputs:
-    static const GLuint BIND_B0             {5}; // trackCache[L].ssbo_B0 (vec4[])
-    static const GLuint BIND_B1             {6}; // trackCache[L].ssbo_B1 (vec4[])
-    static const GLuint BIND_CHI2           {7}; // trackCache[L].ssbo_Chi2 (float[])
-    static const GLuint BIND_ISVALID        {8}; // trackCache[L].ssbo_isValid (uint[])
-    static const GLuint BIND_ALIGN          {9}; // trackCache[L].ssbo_Align (vec4[])
+    static const GLuint TRACK_OUT_B0             {5}; // trackCache[L].ssbo_B0 (vec4[])
+    static const GLuint TRACK_OUT_B1             {6}; // trackCache[L].ssbo_B1 (vec4[])
+    static const GLuint TRACK_OUT_CHI2           {7}; // trackCache[L].ssbo_Chi2 (float[])
+    static const GLuint TRACK_OUT_ISVALID        {8}; // trackCache[L].ssbo_isValid (uint[])
+    static const GLuint TRACK_OUT_ALIGN          {9}; // trackCache[L].ssbo_Align (vec4[])
 
     //track reduction shader binding layout
     // Inputs:

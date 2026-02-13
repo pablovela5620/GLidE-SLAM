@@ -18,6 +18,15 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
     m_cx = cx;
     m_cy = cy;
 
+    m_enableAlign = 1u;
+    m_searchRadius = 3;
+    m_humberK = 0.08f;
+
+    // Per-level thresholds
+    m_searchThreshold = glm::vec4(0.012f, 0.018f, 0.025f, 0.035f);
+    m_rejectThreshold = glm::vec4(0.025f, 0.035f, 0.050f, 0.070f);
+    m_maxShift = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
+
     m_invScaleFactors.resize(m_nLevels);
     m_invScaleFactors[0] = 1.0f;
     for (int i = 1; i < m_nLevels; i++)
@@ -27,36 +36,71 @@ void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFa
 
     initializeImagePyramids();
     initializePreCompute();
+    initializeTrack();
 }
 
-//TODO: Pass a map (string, GLuint) instead
-bool GPUCompute::setShaders(GLuint convert8To32Handle,
-    GLuint gauss32FHandle,
-    GLuint resizeHandle,
-    GLuint copySSBOHandle,
-    GLuint preComputeHandle,
-    GLuint reduceH1passHandle,
-    GLuint reduceH2passHandle)
+bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders)
 {
-    //make sure shader handles loaded
-    if (convert8To32Handle == 0
-        || gauss32FHandle == 0
-        || resizeHandle == 0
-        || copySSBOHandle == 0
-        || preComputeHandle == 0
-        || reduceH1passHandle == 0
-        || reduceH2passHandle == 0)
+    auto it = shaders.find("convert8UCTo32FShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint convert8To32FShader = it->second->getHandle();
+
+    it = shaders.find("gauss32FShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint gaussShader32FShader = it->second->getHandle();
+
+    it = shaders.find("resizeShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint resizeShader = it->second->getHandle();
+
+    it = shaders.find("copyToSSBOShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint ssboShader = it->second->getHandle();
+
+    it = shaders.find("preComputeShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint preComputeShader = it->second->getHandle();
+
+    it = shaders.find("redPreComputeH1Shader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint redPreComputeH1Shader = it->second->getHandle();
+
+    it = shaders.find("redPreComputeH2Shader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint redPreComputeH2Shader = it->second->getHandle();
+
+    it = shaders.find("trackShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint trackShader = it->second->getHandle();
+
+    it = shaders.find("redTrackShader");
+    if (it == shaders.end() || !it->second) return false;
+    GLuint redTrackShader = it->second->getHandle();
+
+    // make sure shader handles loaded
+    if (convert8To32FShader == 0 ||
+        gaussShader32FShader == 0 ||
+        resizeShader == 0 ||
+        ssboShader == 0 ||                 // FIXED: == not =
+        preComputeShader == 0 ||
+        redPreComputeH1Shader == 0 ||
+        redPreComputeH2Shader == 0 ||
+        trackShader == 0 ||
+        redTrackShader == 0)
+    {
         return false;
+    }
 
-
-    //set shader handles
-    m_convert8UCTo32FShader = convert8To32Handle;
-    m_gauss32FShader = gauss32FHandle;
-    m_resizeShader = resizeHandle;
-    m_copySSBOShader = copySSBOHandle;
-    m_preComputeShader = preComputeHandle;
-    m_redH1PreComputeShader = reduceH1passHandle;
-    m_redH2PreComputeShader = reduceH2passHandle;
+    // set shader handles
+    m_convert8UCTo32FShader   = convert8To32FShader;
+    m_gauss32FShader          = gaussShader32FShader;
+    m_resizeShader            = resizeShader;
+    m_copySSBOShader          = ssboShader;
+    m_preComputeShader        = preComputeShader;
+    m_redH1PreComputeShader   = redPreComputeH1Shader;
+    m_redH2PreComputeShader   = redPreComputeH2Shader;
+    m_trackShader             = trackShader;
+    m_red1TrackShader         = redTrackShader;
 
     //set shader uniforms (pyramid shader)
     m_uBlurDirPyramid = glGetUniformLocation(m_gauss32FShader, "uDirection");
@@ -89,7 +133,8 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uMaxShiftTrack = glGetUniformLocation(m_trackShader, "uMaxShift");
     m_uHumberKTrack = glGetUniformLocation(m_trackShader, "uHuberK");
 
-
+    //set shader uniforms (reduce track shader)
+    m_uNpointsReduce1Track = glGetUniformLocation(m_red1TrackShader, "uNPoints");
 
     //used for debugging (compare image pyramids)
     // Create readback SSBO (size for largest level)
@@ -768,17 +813,17 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
             //BIND SSBOs for trackShader:
             //READ-ONLY
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_MAPPOINTS,m_ssboMapPoints);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_REF_VALID,m_preComputeCache[L].ssbo_isValid);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_REF_I,m_preComputeCache[L].ssbo_I);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_REF_J,m_preComputeCache[L].ssbo_J);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_MAPPOINTS,m_ssboMapPoints);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_VALID,m_preComputeCache[L].ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_I,m_preComputeCache[L].ssbo_I);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_J,m_preComputeCache[L].ssbo_J);
 
             //READ-WRITE
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_B0,m_trackCache[L].ssbo_B0);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_B1,m_trackCache[L].ssbo_B1);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_CHI2,m_trackCache[L].ssbo_Chi2);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_ISVALID,m_trackCache[L].ssbo_isValid);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,BIND_ALIGN,m_trackCache[L].ssbo_Align);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B0,m_trackCache[L].ssbo_B0);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B1,m_trackCache[L].ssbo_B1);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_CHI2,m_trackCache[L].ssbo_Chi2);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_ISVALID,m_trackCache[L].ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_ALIGN,m_trackCache[L].ssbo_Align);
 
             //Dispatch
             glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
@@ -786,7 +831,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
 
             glUseProgram(m_red1TrackShader);
-            glUniform1ui(m_uNpointsReduce1Track, (GLint)m_nPoints);
+            glUniform1ui(m_uNpointsReduce1Track, (GLuint)m_nPoints);
 
             //BIND SSBOs for reduce1TrackShader:
             //READ-ONLY
@@ -997,28 +1042,10 @@ bool Viewer::initialize()
     const float scaleFactor = m_slamViewerSettings->directTrackParams.scaleFactor;
 
 
-    //TODO: create a struct with all parameters
-    //TODO: Include also blur and other image processing specific parameters
+
     m_gpuCompute->initialize(w, h, nLevels, patchSize, scaleFactor,fx,fy,cx,cy);
 
-    auto &gaussShader32F = m_shaders.find("gauss32FShader")->second;
-    auto &resizeShader = m_shaders.find("resizeShader")->second;
-    auto &ssboShader = m_shaders.find("copyToSSBOShader")->second;
-    auto &convert8To32FShader = m_shaders.find("convert8UCTo32FShader")->second;
-    auto &preComputeShader = m_shaders.find("preComputeShader")->second;
-    auto &redPreComputeH1Shader = m_shaders.find("redPreComputeH1Shader")->second;
-    auto &redPreComputeH2Shader = m_shaders.find("redPreComputeH2Shader")->second;
-    auto &trackShader = m_shaders.find("trackShader")->second;
-
-    //TODO: check that all shader handles are NOT null
-    //TODO: pass shaders as container, too many shaders for arguments
-    m_gpuCompute->setShaders(convert8To32FShader->getHandle(),
-        gaussShader32F->getHandle(),
-        resizeShader->getHandle(),
-        ssboShader->getHandle(),
-        preComputeShader->getHandle(),
-        redPreComputeH1Shader->getHandle(),
-        redPreComputeH2Shader->getHandle());
+    m_gpuCompute->setShaders(m_shaders);
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     m_isInitialized = true;

@@ -2,82 +2,89 @@
 precision highp float;
 precision highp int;
 
+// cap<=1000: one workgroup covers 256*4 = 1024 points => dispatch(1,1,1)
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 uniform uint uNPoints;
 
 // Inputs (per-point)
-layout(std430, binding = 5) readonly buffer B0Buf    { vec4  B0[];   } inB0;
-layout(std430, binding = 6) readonly buffer B1Buf    { vec4  B1[];   } inB1;
-layout(std430, binding = 7) readonly buffer Chi2Buf  { float Chi2[]; } inChi2;
-layout(std430, binding = 8) readonly buffer ValidBuf { uint  Valid[];} inValid;
+layout(std430, binding = 5) readonly buffer B0Buffer    { vec4  B0[];   };
+layout(std430, binding = 6) readonly buffer B1Buffer    { vec4  B1[];   };
+layout(std430, binding = 7) readonly buffer Chi2Buffer  { float Chi2[]; };
+layout(std430, binding = 8) readonly buffer ValidBuffer { uint  Valid[]; };
 
-// Outputs (global sums for cap<=1024)
-layout(std430, binding = 10) writeonly buffer B0OutBuf    { vec4  B0Out;    } outB0;
-layout(std430, binding = 11) writeonly buffer B1OutBuf    { vec4  B1Out;    } outB1;
-layout(std430, binding = 12) writeonly buffer Chi2OutBuf  { float Chi2Out;  } outChi2;
-layout(std430, binding = 13) writeonly buffer ValidOutBuf { uint  ValidOut; } outValid;
+// Outputs (single element; your ssbo_*Level buffers are sizeof(vec4/float/uint))
+layout(std430, binding = 10) writeonly buffer B0LevelBuffer    { vec4  B0Level;    };
+layout(std430, binding = 11) writeonly buffer B1LevelBuffer    { vec4  B1Level;    };
+layout(std430, binding = 12) writeonly buffer Chi2LevelBuffer  { float Chi2Level;  };
+layout(std430, binding = 13) writeonly buffer ValidLevelBuffer { uint  ValidLevel; };
 
-// shared reduction storage
-shared vec4  sB0[256];
-shared vec4  sB1[256];
-shared float sChi2[256];
-shared uint  sCnt[256];
+shared vec4  sharedB0[256];
+shared vec4  sharedB1[256];
+shared float sharedChi2[256];
+shared uint  sharedValid[256];
 
 void main()
 {
-    const uint WG = 256u;
-    const uint PTS_PER_THREAD = 4u;   // 256*4 = 1024 coverage
+    const uint workgroupSize   = 256u;
+    const uint pointsPerThread = 4u;
 
-    uint tid = gl_LocalInvocationID.x;
+    uint threadID = gl_LocalInvocationID.x;
+    uint gid      = gl_WorkGroupID.x;
 
-    vec4  b0 = vec4(0.0);
-    vec4  b1 = vec4(0.0);
-    float c2 = 0.0;
-    uint  ct = 0u;
+    vec4  b0_local   = vec4(0.0);
+    vec4  b1_local   = vec4(0.0);
+    float chi2_local = 0.0;
+    uint  valid_local = 0u;
 
-    uint base = tid * PTS_PER_THREAD;
+    uint baseIdx = gid * workgroupSize * pointsPerThread + threadID * pointsPerThread;
 
-    // sum up to 4 points per thread
-    for (uint p = 0u; p < PTS_PER_THREAD; ++p)
+    //this loop sums 4 points per threadID
+    for (uint p = 0u; p < pointsPerThread; ++p)
     {
-        uint idx = base + p;
-        if (idx >= uNPoints) break;
+        uint ptIdx = baseIdx + p;
+        if (ptIdx >= uNPoints) break;
 
-        if (inValid.Valid[idx] != 0u)
+        if (Valid[ptIdx] != 0u)
         {
-            b0 += inB0.B0[idx];
-            b1 += inB1.B1[idx];
-            c2 += inChi2.Chi2[idx];
-            ct += 1u;
+            b0_local   += B0[ptIdx];
+            b1_local   += B1[ptIdx];
+            chi2_local += Chi2[ptIdx];
+            valid_local += 1u;
         }
     }
 
-    sB0[tid] = b0;
-    sB1[tid] = b1;
-    sChi2[tid] = c2;
-    sCnt[tid] = ct;
+    sharedB0[threadID]   = b0_local;
+    sharedB1[threadID]   = b1_local;
+    sharedChi2[threadID] = chi2_local;
+    sharedValid[threadID]= valid_local;
 
     barrier();
 
-    // tree reduce over 256 threads
-    for (uint stride = WG >> 1u; stride > 0u; stride >>= 1u)
+    // Parallel reduction (tree/binary reduction)
+    // Sum as pairs, for 256 entries, total of 128 sums on first iteration, then 64 ... etc.
+    //threadID = 0, workgroupsize = 256, stride = 128. sharedData [0] = sharedData[0] + sharedData[128]
+    //threadID = 1, workgroupsize = 256, stride = 128. sharedData [1] = sharedData[1] + sharedData[129]
+    //...
+    //threadID = 127, workgroupsize = 256, stride = 128. sharedData [127] = sharedData[127] + sharedData[255]
+    for (uint stride = workgroupSize >> 1u; stride > 0u; stride >>= 1u)
     {
-        if (tid < stride)
+        if (threadID < stride)
         {
-            sB0[tid]   += sB0[tid + stride];
-            sB1[tid]   += sB1[tid + stride];
-            sChi2[tid] += sChi2[tid + stride];
-            sCnt[tid]  += sCnt[tid + stride];
+            sharedB0[threadID]   += sharedB0[threadID + stride];
+            sharedB1[threadID]   += sharedB1[threadID + stride];
+            sharedChi2[threadID] += sharedChi2[threadID + stride];
+            sharedValid[threadID]+= sharedValid[threadID + stride];
         }
         barrier();
     }
 
-    if (tid == 0u)
+    if (threadID == 0u)
     {
-        outB0.B0Out       = sB0[0];
-        outB1.B1Out       = sB1[0];
-        outChi2.Chi2Out   = sChi2[0];
-        outValid.ValidOut = sCnt[0];
+        // gid is 0 for your current dispatch, but this stays correct if you later add more groups
+        B0Level    = sharedB0[0];
+        B1Level    = sharedB1[0];
+        Chi2Level  = sharedChi2[0];
+        ValidLevel = sharedValid[0];
     }
 }
