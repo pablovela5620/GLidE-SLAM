@@ -34,10 +34,10 @@
 #include "LoopClosing.h"
 #include "KeyFrameDatabase.h"
 #include "ORBVocabulary.h"
-#include "viewer.h"
-#include "SlamSettings.h"
+#include "GPUEngine.h"
+#include "GPUEngineSettings.h"
 
-class Viewer;
+class GPUEngine;
 
 namespace ORB_SLAM2
 {
@@ -126,7 +126,7 @@ public:
     std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
 
     static glm::vec3 readInVector(cv::FileStorage& fs, const std::string& parameter);
-    static bool ReadConfigFile(const std::string& path, SlamSettings* slamSettings);
+    static bool ReadConfigFile(const std::string& path, GPUEngineSettings* slamSettings);
 private:
 
     // Input sensor
@@ -154,7 +154,7 @@ private:
     LoopClosing* mpLoopCloser;
 
     // The viewer draws the map and the current camera pose. It uses Pangolin.
-    Viewer* mpViewer;
+    GPUEngine* mpGPUEngine;
 
     //FrameDrawer* mpFrameDrawer;
     //MapDrawer* mpMapDrawer;
@@ -163,7 +163,7 @@ private:
     // The Tracking thread "lives" in the main execution thread that creates the System object.
     std::thread* mptLocalMapping;
     std::thread* mptLoopClosing;
-    std::thread* mptViewer;
+    std::thread* mptGPUEngine;
 
     // Reset flag
     std::mutex mMutexReset;
@@ -182,7 +182,7 @@ private:
 
 
     //added viewer for viewer settings
-    SlamSettings* mpSlamSettings;
+    GPUEngineSettings* mpSlamSettings;
 };
 
 }// namespace ORB_SLAM

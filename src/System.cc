@@ -31,7 +31,7 @@ namespace ORB_SLAM2
 {
 
 System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
-               const bool bUseViewer):mSensor(sensor), mpViewer(static_cast<Viewer*>(NULL)), mbReset(false),mbActivateLocalizationMode(false),
+               const bool bUseViewer):mSensor(sensor), mpGPUEngine(static_cast<GPUEngine*>(NULL)), mbReset(false),mbActivateLocalizationMode(false),
         mbDeactivateLocalizationMode(false)
 {
     // Output welcome message
@@ -100,13 +100,13 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     if(bUseViewer)
     {
         //Read viewer settings files:
-        mpSlamSettings = new SlamSettings();
-        ReadConfigFile("Examples/Monocular/slamConfig.yaml", mpSlamSettings);
-        mpViewer = new Viewer(this, mpSlamSettings);
+        mpSlamSettings = new GPUEngineSettings();
+        ReadConfigFile("Examples/Monocular/GPUConfig.yaml", mpSlamSettings);
+        mpGPUEngine = new GPUEngine(this, mpSlamSettings);
         if (mpMap)
-            mpViewer->setMap(mpMap);
-        mptViewer = new thread(&Viewer::run, mpViewer);
-        mpTracker->SetViewer(mpViewer);
+            mpGPUEngine->setMap(mpMap);
+        mptGPUEngine = new thread(&GPUEngine::run, mpGPUEngine);
+        mpTracker->SetViewer(mpGPUEngine);
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
@@ -312,9 +312,9 @@ void System::Shutdown()
 {
     mpLocalMapper->RequestFinish();
     mpLoopCloser->RequestFinish();
-    if(mpViewer)
+    if(mpGPUEngine)
     {
-        mpViewer->exit();
+        mpGPUEngine->exit();
     }
 
     // Wait until all thread have effectively stopped
@@ -508,7 +508,7 @@ glm::vec3 System::readInVector(cv::FileStorage& fs, const std::string& parameter
     fn >> v;
     return glm::vec3(v[0], v[1], v[2]);
 }
-bool System::ReadConfigFile(const std::string &path, SlamSettings *slamSettings)
+bool System::ReadConfigFile(const std::string &path, GPUEngineSettings *slamSettings)
 {
       cv::FileStorage fs(path, cv::FileStorage::READ);
     if (!fs.isOpened())

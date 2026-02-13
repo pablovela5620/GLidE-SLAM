@@ -1,8 +1,4 @@
-#include "viewer.h"
-
-// At top, after includes
-typedef void (*PFNGLGETBUFFERSUBDATAPROC)(GLenum, GLintptr, GLsizeiptr, void*);
-static PFNGLGETBUFFERSUBDATAPROC glGetBufferSubData = nullptr;
+#include "GPUEngine.h"
 
 void GPUCompute::initialize(int w,int h,int levels, int patchSize, float scaleFactor,float fx, float fy, float cx, float cy)
 {
@@ -982,7 +978,7 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
     return result;
 }
 
-bool Viewer::initialize()
+bool GPUEngine::initialize()
 {
 
     m_isInitialized = false;
@@ -1052,7 +1048,7 @@ bool Viewer::initialize()
     return m_isInitialized;
 }
 
-void Viewer::run()
+void GPUEngine::run()
 {
     if (!m_isInitialized)
         initialize();
@@ -1096,7 +1092,7 @@ void Viewer::run()
     }
 }
 
-void Viewer::updateDirectTracking()
+void GPUEngine::updateDirectTracking()
 {
     cv::Mat img, pose;
     std::vector<glm::vec4> pts;
@@ -1146,7 +1142,7 @@ void Viewer::updateDirectTracking()
         m_gpuCompute->track(pose,outChi2,outN);
 }
 
-void Viewer::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
+void GPUEngine::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
@@ -1164,7 +1160,7 @@ void Viewer::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
     }
 }
 
-void Viewer::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
+void GPUEngine::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
@@ -1178,7 +1174,7 @@ void Viewer::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> m
     }
 }
 
-void Viewer::initializeWindows()
+void GPUEngine::initializeWindows()
 {
     const int widthOffset = m_width + 80;
     const int heightOffset = m_height + 80;
@@ -1234,7 +1230,7 @@ void Viewer::initializeWindows()
     Logger<std::string>::LogInfoIII("Viewer: All windows initialized.");
 }
 
-void Viewer::render()
+void GPUEngine::render()
 {
     //set context and do normal rendering
     ensureWindowContext(m_windowMap3D->getDisplay(), m_windowMap3D->getSurface(), m_windowMap3D->getContext());
@@ -1243,7 +1239,7 @@ void Viewer::render()
     PollEvents();
 }
 
-void Viewer::renderFrames2D()
+void GPUEngine::renderFrames2D()
 {
     //set context and do normal rendering
 
@@ -1277,7 +1273,7 @@ void Viewer::renderFrames2D()
     // }
 }
 
-void Viewer::renderMap3D()
+void GPUEngine::renderMap3D()
 {
 
 
@@ -1360,7 +1356,7 @@ void Viewer::renderMap3D()
     m_windowMap3D->onUpdateWindow();
 }
 
-void Viewer::updateMapPoints()
+void GPUEngine::updateMapPoints()
 {
     //make a local copy and load to buffer fetch pts addresses from map
     if (!m_stop)
@@ -1410,7 +1406,7 @@ void Viewer::updateMapPoints()
 
 }
 
-void Viewer::updateFrames3D()
+void GPUEngine::updateFrames3D()
 {
     if (!m_stop)
     {
@@ -1420,7 +1416,7 @@ void Viewer::updateFrames3D()
     }
 }
 
-void Viewer::updateKFrames()
+void GPUEngine::updateKFrames()
 {
     //TODO: fix connection between frames (probably uses parent?)
     const std::vector<ORB_SLAM2::KeyFrame*> frames = m_map->GetAllKeyFrames();
@@ -1497,7 +1493,7 @@ void Viewer::updateKFrames()
 
 }
 
-void Viewer::updateTweenIndirectFrames()
+void GPUEngine::updateTweenIndirectFrames()
 {
     const std::vector<ORB_SLAM2::Frame>& frames = m_map->GetTweenFrames();
     glm::mat4 F(1.0f);
@@ -1542,7 +1538,7 @@ void Viewer::updateTweenIndirectFrames()
     }
 }
 
-void Viewer::updateTweenDirectFrames()
+void GPUEngine::updateTweenDirectFrames()
 {
     const std::vector<ORB_SLAM2::FrameDirect>& frames = m_map->GetDirectTweenFrames();
     glm::mat4 F(1.0f);
@@ -1589,7 +1585,7 @@ void Viewer::updateTweenDirectFrames()
     }
 }
 using namespace UIEvents;
-void Viewer::PollEvents()
+void GPUEngine::PollEvents()
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -1668,7 +1664,7 @@ void Viewer::PollEvents()
 }
 
 
-void Viewer::updateIndirectFeatureMatches(const cv::Mat &image, const std::vector<cv::KeyPoint> &kpts1, const std::vector<cv::KeyPoint> &kpts2, const std::vector<float> &d)
+void GPUEngine::updateIndirectFeatureMatches(const cv::Mat &image, const std::vector<cv::KeyPoint> &kpts1, const std::vector<cv::KeyPoint> &kpts2, const std::vector<float> &d)
 {
     if (!m_stop)
     {
@@ -1687,7 +1683,7 @@ void Viewer::updateIndirectFeatureMatches(const cv::Mat &image, const std::vecto
     }
 }
 
-void Viewer::printVersions()
+void GPUEngine::printVersions()
 {
 
     const GLubyte *renderer = glGetString(GL_RENDERER);
@@ -1720,7 +1716,7 @@ void Viewer::printVersions()
     }
 }
 
-void Viewer::shutdown()
+void GPUEngine::shutdown()
 {
     stop();
 
@@ -1764,7 +1760,7 @@ void Viewer::shutdown()
 
 }
 
-void Viewer::onMouse(const UIEvent &e)
+void GPUEngine::onMouse(const UIEvent &e)
 {
     auto& eventType = e.getType();
 
@@ -1797,7 +1793,7 @@ void Viewer::onMouse(const UIEvent &e)
     }
 }
 
-void Viewer::onKeyboard(const UIEvent &e)
+void GPUEngine::onKeyboard(const UIEvent &e)
 {
     auto& eventType = e.getType();
     switch (eventType)
@@ -1838,7 +1834,7 @@ void Viewer::onKeyboard(const UIEvent &e)
     }
 }
 
-void Viewer::onWindow(const UIEvent &e)
+void GPUEngine::onWindow(const UIEvent &e)
 {
     auto& eventType = e.getType();
     switch (eventType)
@@ -1858,7 +1854,7 @@ void Viewer::onWindow(const UIEvent &e)
 
 }
 
-void Viewer::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLContext context)
+void GPUEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLContext context)
 {
     if (m_eglContext != context || m_eglSurface != surface || m_eglDisplay != display)
     {
@@ -1869,18 +1865,18 @@ void Viewer::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLCont
     }
 }
 
-void Viewer::exit()
+void GPUEngine::exit()
 {
     shutdown();
 }
 
-void Viewer::stop()
+void GPUEngine::stop()
 {
     std::lock_guard<std::mutex> lock(mMutexUpdate);
     m_stop = true;
 }
 
-void Viewer::initializeShaders()
+void GPUEngine::initializeShaders()
 {
     //TODO: Remove all smart pointers -> Use raw pointers
 
@@ -1983,7 +1979,7 @@ void Viewer::initializeShaders()
 
 }
 
-void Viewer::initializeBuffers()
+void GPUEngine::initializeBuffers()
 {
     glGenFramebuffers(1, &renderFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, renderFBO);
@@ -1999,7 +1995,7 @@ void Viewer::initializeBuffers()
     Logger<std::string>::LogInfoIII("Viewer: Frame buffers initialized.");
 }
 
-void Viewer::initializeMapPoints()
+void GPUEngine::initializeMapPoints()
 {
     m_mapPointsGfx = new PointCloud();
     m_mapPointsGfx->initializeEmptyBuffer();
@@ -2010,7 +2006,7 @@ void Viewer::initializeMapPoints()
     Logger<std::string>::LogInfoIII("Viewer: Point cloud maps initialized.");
 }
 
-void Viewer::initializeCamera()
+void GPUEngine::initializeCamera()
 {
     glm::vec3 camPos(0.0f, 0.0f, -5.0f);
     glm::vec3 camTarget(0.0f, 0.0f, 1.0f);
@@ -2023,7 +2019,7 @@ void Viewer::initializeCamera()
     m_activeCamera->setFollow(follow, followDistance);
 }
 
-void Viewer::setMatrices()
+void GPUEngine::setMatrices()
 {
     //because here we use OpenXR's matrices
     m_vMatrix = m_activeCamera->getViewMatrix();
@@ -2031,7 +2027,7 @@ void Viewer::setMatrices()
     m_mvpMatrix = m_pMatrix * m_vMatrix * m_mMatrix;
 }
 
-void Viewer::setSquareUpdateFlag(const char &state)
+void GPUEngine::setSquareUpdateFlag(const char &state)
 {
     std::unique_lock<std::mutex> lock(m_viewerMutex); {
         switch (state)
@@ -2056,7 +2052,7 @@ void Viewer::setSquareUpdateFlag(const char &state)
     }
 }
 
-bool Viewer::setActiveCamera(std::shared_ptr<Camera> camera)
+bool GPUEngine::setActiveCamera(std::shared_ptr<Camera> camera)
 {
     if (camera != nullptr)
     {
@@ -2066,7 +2062,7 @@ bool Viewer::setActiveCamera(std::shared_ptr<Camera> camera)
     return false;
 }
 
-void Viewer::initializeProjectionMatrix()
+void GPUEngine::initializeProjectionMatrix()
 {
     m_p = glm::perspective(glm::radians(m_fov),
                            static_cast<float>(m_width / m_height),

@@ -55,7 +55,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "System.h"
-#include "SlamSettings.h"
+#include "GPUEngineSettings.h"
 #include "Map.h"
 #include "Logger.h"
 
@@ -1069,11 +1069,11 @@ private:
 
 };
 
-class Viewer
+class GPUEngine
 {
 public:
     //TODO: separeate methods into private/public
-    Viewer(ORB_SLAM2::System* system, SlamSettings* slamSettings) : m_system(system), m_slamViewerSettings(slamSettings){};
+    GPUEngine(ORB_SLAM2::System* system, GPUEngineSettings* slamSettings) : m_system(system), m_slamViewerSettings(slamSettings){};
 
     bool initialize();
     void run();
@@ -1216,7 +1216,7 @@ private:
     glm::mat4 m_pMatrix{glm::mat4(1.0f)};
     glm::mat4 m_mvpMatrix{glm::mat4(1.0f)};
 
-    SlamSettings *m_slamViewerSettings{NULL};
+    GPUEngineSettings *m_slamViewerSettings{NULL};
 
     std::mutex mMutexUpdate;
     std::condition_variable m_cv;

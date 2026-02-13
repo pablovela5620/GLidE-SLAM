@@ -6,9 +6,9 @@
 #include <string>
 #include <glm/glm.hpp>
 
-struct SlamSettings
+struct GPUEngineSettings
 {
-    SlamSettings& operator=(const SlamSettings& other)
+    GPUEngineSettings& operator=(const GPUEngineSettings& other)
 	{
 		if (this != &other)
 		{
@@ -68,6 +68,14 @@ struct SlamSettings
 		int nLevels{8};
 		int patchSize{7};
 		float scaleFactor{1.2f};
+
+		size_t m_maxPoints{1024};
+		uint32_t m_enableAlign{0};
+		int m_searchRadius{3};
+		float m_humberK{0.08f};
+		glm::vec4 m_searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
+		glm::vec4 m_rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
+		glm::vec4 m_maxShift{0.0f, 0.0f, 0.0f, 0.0f};
 
 
 	}directTrackParams;
