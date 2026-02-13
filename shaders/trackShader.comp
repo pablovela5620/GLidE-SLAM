@@ -311,9 +311,13 @@ void main()
         //otherwise compute full MSE, without alignment search: du=dv=0,
         if (iteration == 0)
         {
-            mseFull = fullMSE(ptIndex, u0, v0, patchSizeI);
-            if (mseFull > rejectThreshold) valid = false;
-
+            if (u0 < border || v0 < border || u0 >= float(size.x) - border || v0 >= float(size.y) - border)
+                valid = false;
+            else
+            {
+                mseFull = fullMSE(ptIndex, u0, v0, patchSizeI);
+                if (mseFull > rejectThreshold) valid = false;
+            }
             inOutAlign.Align[ptIndex] = vec4(0.0, 0.0, valid ? 1.0 : 0.0, mseFull);
         }
         else
@@ -344,8 +348,6 @@ void main()
     vec4 b1 = vec4(0.0);
     float chi2 = 0.0;
 
-    float SSE = 0.0;
-
     for(int y = 0; y < patchSizeI; ++y)
     {
         for(int x = 0; x < patchSizeI; ++x)
@@ -361,10 +363,8 @@ void main()
             float INew = bilinearSample(ux, vx);
 
             float residual = IRef - INew;
-            SSE += residual * residual;
-
             float aResidual = abs(residual);
-            float w = (aResidual <= huberK) ? 1.0f : (huberK / aResidual);
+            float w = (aResidual <= huberK) ? 1.0 : (huberK / aResidual);
 
             uint JBase = (IBase + pIdx) * 6u;
 
@@ -381,6 +381,7 @@ void main()
         outB0.B0[ptIndex] = b0;
         outB1.B1[ptIndex] = b1;
         outChi2.Chi2[ptIndex] = chi2;
+        outValid.Valid[ptIndex] = 1u;
     }
     else
         invalidatePoint(ptIndex);

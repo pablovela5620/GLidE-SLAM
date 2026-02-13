@@ -55,6 +55,8 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_resizeShader = resizeHandle;
     m_copySSBOShader = copySSBOHandle;
     m_preComputeShader = preComputeHandle;
+    m_redH1PreComputeShader = reduceH1passHandle;
+    m_redH2PreComputeShader = reduceH2passHandle;
 
     //set shader uniforms (pyramid shader)
     m_uBlurDirPyramid = glGetUniformLocation(m_gauss32FShader, "uDirection");
@@ -703,7 +705,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
     glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
     glUniform1i(m_uPatchSizeTrack, m_patchSize);
     glUniform1ui(m_uEnableAlignTrack, m_enableAlign);
-    glUniform1i(m_uSearchRadiusTrack, (GLuint)m_searchRadius);
+    glUniform1ui(m_uSearchRadiusTrack, (GLuint)m_searchRadius);
     glUniform4fv(m_uSearchThresholdTrack, 1, &m_searchThreshold[0]);
     glUniform4fv(m_uRejectThresholdTrack, 1, &m_rejectThreshold[0]);
     glUniform4fv(m_uMaxShiftTrack, 1, &m_maxShift[0]);
@@ -780,7 +782,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
             //Dispatch
             glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 
             glUseProgram(m_red1TrackShader);
@@ -1004,8 +1006,8 @@ bool Viewer::initialize()
     auto &ssboShader = m_shaders.find("copyToSSBOShader")->second;
     auto &convert8To32FShader = m_shaders.find("convert8UCTo32FShader")->second;
     auto &preComputeShader = m_shaders.find("preComputeShader")->second;
-    auto &reduceH1PassShader = m_shaders.find("reduceH1PassShader")->second;
-    auto &reduceH2PassShader = m_shaders.find("reduceH2PassShader")->second;
+    auto &redPreComputeH1Shader = m_shaders.find("redPreComputeH1Shader")->second;
+    auto &redPreComputeH2Shader = m_shaders.find("redPreComputeH2Shader")->second;
     auto &trackShader = m_shaders.find("trackShader")->second;
 
     //TODO: check that all shader handles are NOT null
@@ -1015,8 +1017,8 @@ bool Viewer::initialize()
         resizeShader->getHandle(),
         ssboShader->getHandle(),
         preComputeShader->getHandle(),
-        reduceH1PassShader->getHandle(),
-        reduceH2PassShader->getHandle());
+        redPreComputeH1Shader->getHandle(),
+        redPreComputeH2Shader->getHandle());
 
     Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
     m_isInitialized = true;
@@ -1928,20 +1930,20 @@ void Viewer::initializeShaders()
     m_shaders["preComputeShader"] = preComputeShader;
 
     shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> reduceH1PassShader = std::make_shared<Shader>();
-    reduceH1PassShader->setHandle(shaderProgram);
-    reduceH1PassShader->compile(GL_COMPUTE_SHADER, "shaders/reduceH1PassShader.comp");
-    reduceH1PassShader->setShaderName("reduceH1PassShader");
-    reduceH1PassShader->link();
-    m_shaders["reduceH1PassShader"] = reduceH1PassShader;
+    std::shared_ptr<Shader> redPreComputeH1Shader = std::make_shared<Shader>();
+    redPreComputeH1Shader->setHandle(shaderProgram);
+    redPreComputeH1Shader->compile(GL_COMPUTE_SHADER, "shaders/redPreComputeH1Shader.comp");
+    redPreComputeH1Shader->setShaderName("redPreComputeH1Shader");
+    redPreComputeH1Shader->link();
+    m_shaders["redPreComputeH1Shader"] = redPreComputeH1Shader;
 
     shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> reduceH2PassShader = std::make_shared<Shader>();
-    reduceH2PassShader->setHandle(shaderProgram);
-    reduceH2PassShader->compile(GL_COMPUTE_SHADER, "shaders/reduceH2PassShader.comp");
-    reduceH2PassShader->setShaderName("reduceH2PassShader");
-    reduceH2PassShader->link();
-    m_shaders["reduceH2PassShader"] = reduceH2PassShader;
+    std::shared_ptr<Shader> redPreComputeH2Shader = std::make_shared<Shader>();
+    redPreComputeH2Shader->setHandle(shaderProgram);
+    redPreComputeH2Shader->compile(GL_COMPUTE_SHADER, "shaders/redPreComputeH2Shader.comp");
+    redPreComputeH2Shader->setShaderName("redPreComputeH2Shader");
+    redPreComputeH2Shader->link();
+    m_shaders["redPreComputeH2Shader"] = redPreComputeH2Shader;
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();
