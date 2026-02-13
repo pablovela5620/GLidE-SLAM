@@ -23,6 +23,7 @@ uniform uint        uSearchRadius;      //if enable align, how much to search fo
 uniform vec4        uSearchThreshold;   //search if MSE > threshold
 uniform vec4        uRejectThreshold;   //reject if MSE > threshold
 uniform vec4        uMaxShift;          //reject if shift > threshold
+uniform float       uHuberK;            //used for huber weighting
 uniform sampler2D   uNewTexture;        //current level image pyramid
 
 
@@ -42,7 +43,9 @@ layout(std430, binding = 5) writeonly buffer B0Buffer           {vec4  B0[];    
 layout(std430, binding = 6) writeonly buffer B1Buffer           {vec4  B1[];    } outB1;
 layout(std430, binding = 7) writeonly buffer Chi2Buffer         {float Chi2[];  } outChi2;
 layout(std430, binding = 8) writeonly buffer NewValidBuffer     {uint  Valid[]; } outValid;
-layout(std430, binding = 9) writeonly buffer AlignBuffer        {vec4  Align[]; } outAlign;
+
+//read and write
+layout(std430, binding = 9) buffer AlignBuffer        {vec4  Align[]; } inOutAlign;
 
 
 //helper functions
@@ -63,7 +66,7 @@ float fastMSE(in uint idx, float u, float v, uint patchSize)
 
     int step = int(patchCenter) - 1;
     if (step < 1) step = 1;
-    const int offs[3] = int[3](-step, 0, step);
+    int offs[3] = int[3](-step, 0, step);
 
     uint IBase = idx * uint(patchArea);
 
@@ -97,21 +100,21 @@ float fastMSE(in uint idx, float u, float v, uint patchSize)
     return SSE;
 }
 
-float fullMSE(in uint idx, float u, float v, uint patchSize)
+float fullMSE(in uint idx, float u, float v, int patchSize)
 {
-    uint patchArea = patchSize * patchSize;
-    float patchCenter = float(patchSize - 1u) * 0.5;
+    uint patchSizeU = uint(patchSize);
+    uint patchArea = uint(patchSize) * uint(patchSize);
+    float patchCenter = float(patchSize - 1) * 0.5;
     uint IBase = idx * uint(patchArea);
 
     float SSE = 0.0;
     int count = 0;
 
-    //search patch
     for(int y = 0; y < patchSize; ++y)
     {
         for(int x = 0; x < patchSize; ++x)
         {
-            uint pIdx = uint(y) * patchSize + uint(x);
+            uint pIdx = uint(y) * patchSizeU + uint(x);
             float IRef = inI.IRef[IBase + pIdx];
 
             float ux = u + float(x) - patchCenter;
@@ -163,24 +166,38 @@ float u, float v, out int outDu, out int outDv, out float bestScore, out float s
     }
 }
 
-
+void invalidatePoint(uint i)
+{
+    outValid.Valid[i] = 0u;
+    outB0.B0[i] = vec4(0.0);
+    outB1.B1[i] = vec4(0.0);
+    outChi2.Chi2[i] = 0.0;
+}
 
 void main()
 {
+    //Variables assignment
     uint ptIndex = gl_GlobalInvocationID.x;
 
     ivec2 size = textureSize(uNewTexture,0); //sample texture at mip level 0
-    float patchCenter = float(uPatchSize - 1) * 0.5;
-    uint patchSize = uPatchSize;
+    uint patchSizeU = uint(uPatchSize);
+    int  patchSizeI = uPatchSize;
+    float patchCenter = float(patchSizeI - 1) * 0.5;
+    uint patchArea = patchSizeU * patchSizeU;
+
     //safety margin for bilinear interpolation
     float border      = patchCenter + 2.0;
 
+    //extra search in case align is on
     float searchRadius = float(uSearchRadius);
-
-    //extra search in case enable align is on
     float borderSearch = border + searchRadius;
 
     int level = uLevel;
+    int iteration = uIteration;
+    float huberK = uHuberK;
+
+
+
 
     //check invocation overflow
     if(ptIndex >= uint(uNPoints))
@@ -190,7 +207,7 @@ void main()
     //also check if RevValidBuffer?
     if(inValid.Valid[ptIndex] == 0u)
     {
-        outValid.Valid[ptIndex] = 0u;
+        invalidatePoint(ptIndex);
         return;
     }
 
@@ -204,7 +221,7 @@ void main()
     //check point behind camera
     if(Z <= 0.0)
     {
-        outValid.Valid[ptIndex] = 0u;
+        invalidatePoint(ptIndex);
         return;
     }
 
@@ -218,69 +235,156 @@ void main()
     float u0 = fx * (X / Z) + cx;
     float v0 = fy * (Y / Z) + cy;
 
+    int du = 0;
+    int dv = 0;
+    float mseFull = 0.0;
+    bool valid = true;
 
+    //used for thresholds, later needs to be properly expanded for image pyramids > 4
+    int li = (level < 0) ? 0 : ((level > 3) ? 3 : level);
+    float rejectThreshold = uRejectThreshold[li];
+    float maxShift        = uMaxShift[li];
+    float searchThreshold = uSearchThreshold[li];
 
-    //Do alignment search?
+    //Do alignment search only at iteration 0
     if(uEnableAlign == 1u)
     {
-        //check border safety with extra shift
-        if((u0 < borderSearch || v0 < borderSearch) ||
-        (u0 >= float(size.x) - borderSearch|| v0 >= float(size.y) - borderSearch))
+        if (iteration == 0)
         {
-            outAlign.Align[ptIndex] = vec4(0,0,0,0);
-            outValid.Valid[ptIndex] = 0u;
-            return;
-        }
+            //check border with extra pixels for search region
+            if (u0 < borderSearch || v0 < borderSearch ||
+            u0 >= float(size.x) - borderSearch || v0 >= float(size.y) - borderSearch)
+            {
+                valid = false;
+            }
+            else
+            {
+                //get fast MSE
+                float mseFast = fastMSE(ptIndex, u0, v0, patchSizeU);
 
-        int nSearched = 0;
-        int nValid = 0;
-        float sumShift = 0.0f;
-        float worstShift = 0.0f;
+                //score is error (the lower the better)
+                float bestScore = mseFast;
+                float secondBestScore = 1.0/0.0;
 
-        float mse = fastMSE(ptIndex,u0,v0, patchSize);
-        int bestDu = 0;
-        int bestDv = 0;
-        float bestScore = mse;
-        float secondBestScore = 100000;
+                //if first try gives high error, search for better offset
+                if (mseFast > searchThreshold)
+                {
+                    fastSearchN(ptIndex, int(uSearchRadius), patchSizeU,
+                    u0, v0, du, dv, bestScore, secondBestScore);
+                }
 
-        //used for thresholds, later needs to be properly expanded for image pyramids > 4
-        int Lthresholds = (level < 0) ? 0 : ((level > 3) ? 3 : level);
+                //length of shift, avoid sqrt
+                float shift = float(du*du + dv*dv);
 
-        float searchThreshold = uSearchThreshold[Lthresholds];
-        float rejectThreshold = uRejectThreshold[Lthresholds];
-        float maxShift        = uMaxShift[Lthresholds];
+                // ambiguity check
+                bool ambiguous = false;
+                if (!isnan(secondBestScore) && !isinf(secondBestScore) && secondBestScore > 1e-12)
+                {
+                    float ratio = bestScore / secondBestScore;
+                    if (ratio > 0.95) ambiguous = true;
+                }
 
-        //if error too high, do neighbor searches
-        if(mse > searchThreshold)
-        {
-            ++nSearched;
-            fastSearchN(ptIndex, int(searchRadius), patchSize, u0, v0,bestDu, bestDv,bestScore,secondBestScore);
-        }
+                //full score at best offset
+                mseFull = fullMSE(ptIndex, u0 + float(du), v0 + float(dv), patchSizeI);
 
-        //check total shift, avoid sqrt
-        float shift = bestDu * bestDu + bestDv * bestDv;
+                //reject or not
+                if (ambiguous || shift > maxShift*maxShift || mseFull > rejectThreshold)
+                    valid = false;
+            }
 
-        //check if patch is unique
-        uint ambiguous = 0u;
-        float ratio = bestScore / secondBestScore;
-        if(ratio > 0.95)
-            ambiguous = 1u;
-
-        //discard
-        if(ambiguous == 1u || shift > (float(maxShift*maxShift)) || bestScore > rejectThreshold)
-        {
-            outAlign.Align[ptIndex] = vec4(0,0,0,0);
-            outValid.Valid[ptIndex] = 0u;
-            return;
+            // write offsets to buffer for later iterations
+            inOutAlign.Align[ptIndex] = vec4(float(du), float(dv), valid ? 1.0 : 0.0, mseFull);
         }
         else
         {
-            outAlign.Align[ptIndex] = vec4(float(bestDu),float(bestDv),1.0,bestScore);
-            outValid.Valid[ptIndex] = 1u;
+            //read offsets for (iterations > 0):
+            vec4 alignmentBuffer = inOutAlign.Align[ptIndex];
+            du = int(alignmentBuffer.x);
+            dv = int(alignmentBuffer.y);
+            valid = (alignmentBuffer.z > 0.5);
+            mseFull = alignmentBuffer.w;
         }
+    }
+    else
+    {
+        //Could be removed entirely.
+        //otherwise compute full MSE, without alignment search: du=dv=0,
+        if (iteration == 0)
+        {
+            mseFull = fullMSE(ptIndex, u0, v0, patchSizeI);
+            if (mseFull > rejectThreshold) valid = false;
 
+            inOutAlign.Align[ptIndex] = vec4(0.0, 0.0, valid ? 1.0 : 0.0, mseFull);
+        }
+        else
+        {
+            vec4 alignmentBuffer = inOutAlign.Align[ptIndex];
+            valid  = (alignmentBuffer.z > 0.5);
+            mseFull = alignmentBuffer.w;
+        }
+    }
+
+    // corrected center (du and dv are 0 if no alignment search is done)
+    float uc = u0 + float(du);
+    float vc = v0 + float(dv);
+
+    //check borders
+    if (!valid || uc < border || vc < border || uc >= float(size.x) - border || vc >= float(size.y) - border)
+    {
+        invalidatePoint(ptIndex);
+        return;
     }
 
 
+
+    //starting index of patch in buffer that stores all patches
+    uint IBase = ptIndex * uint(patchArea);
+
+    vec4 b0 = vec4(0.0);
+    vec4 b1 = vec4(0.0);
+    float chi2 = 0.0;
+
+    float SSE = 0.0;
+
+    for(int y = 0; y < patchSizeI; ++y)
+    {
+        for(int x = 0; x < patchSizeI; ++x)
+        {
+            //stride index through patch
+            uint pIdx = uint(y) * patchSizeU + uint(x);
+            //reference image pixel intensity
+            float IRef = inI.IRef[IBase + pIdx];
+
+            //get current image pixel intensity
+            float ux = uc + float(x) - patchCenter;
+            float vx = vc + float(y) - patchCenter;
+            float INew = bilinearSample(ux, vx);
+
+            float residual = IRef - INew;
+            SSE += residual * residual;
+
+            float aResidual = abs(residual);
+            float w = (aResidual <= huberK) ? 1.0f : (huberK / aResidual);
+
+            uint JBase = (IBase + pIdx) * 6u;
+
+            b0 += w * vec4(inJ.J[JBase+0u], inJ.J[JBase+1u], inJ.J[JBase+2u], inJ.J[JBase+3u]) * residual;
+            b1 += w * vec4(inJ.J[JBase+4u], inJ.J[JBase+5u],0.0,0.0) * residual;
+
+            chi2 += w * residual * residual;
+        }
+    }
+
+    //write outputs
+    if(valid)
+    {
+        outB0.B0[ptIndex] = b0;
+        outB1.B1[ptIndex] = b1;
+        outChi2.Chi2[ptIndex] = chi2;
+    }
+    else
+        invalidatePoint(ptIndex);
+
+    return;
 
 }

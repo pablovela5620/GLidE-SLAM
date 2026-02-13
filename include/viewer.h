@@ -930,6 +930,7 @@ private:
     float m_patchCenter{0.0f};
     uint32_t m_enableAlign{0};
     int m_searchRadius{3};
+    float m_humberK{0.08f};
     glm::vec4 m_searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
     glm::vec4 m_rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
     glm::vec4 m_maxShift{0.0f, 0.0f, 0.0f, 0.0f};
@@ -1008,6 +1009,7 @@ private:
     GLint m_uSearchThresholdTrack{-1};
     GLint m_uRejectThresholdTrack{-1};
     GLint m_uMaxShiftTrack{-1};
+    GLint m_uHumberKTrack{-1};
 
     GLint m_uNpointsReduce1Track{-1};
 

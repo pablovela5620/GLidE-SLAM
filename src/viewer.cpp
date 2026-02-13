@@ -85,6 +85,7 @@ bool GPUCompute::setShaders(GLuint convert8To32Handle,
     m_uSearchThresholdTrack = glGetUniformLocation(m_trackShader, "uSearchThreshold");
     m_uRejectThresholdTrack = glGetUniformLocation(m_trackShader, "uRejectThreshold");
     m_uMaxShiftTrack = glGetUniformLocation(m_trackShader, "uMaxShift");
+    m_uHumberKTrack = glGetUniformLocation(m_trackShader, "uHuberK");
 
 
 
@@ -706,6 +707,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
     glUniform4fv(m_uSearchThresholdTrack, 1, &m_searchThreshold[0]);
     glUniform4fv(m_uRejectThresholdTrack, 1, &m_rejectThreshold[0]);
     glUniform4fv(m_uMaxShiftTrack, 1, &m_maxShift[0]);
+    glUniform1f(m_uHumberKTrack, m_humberK);
 
 
     //Main loop, course to fine levels
