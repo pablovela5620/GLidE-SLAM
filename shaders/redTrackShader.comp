@@ -1,0 +1,83 @@
+#version 310 es
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+uniform uint uNPoints;
+
+// Inputs (per-point)
+layout(std430, binding = 5) readonly buffer B0Buf    { vec4  B0[];   } inB0;
+layout(std430, binding = 6) readonly buffer B1Buf    { vec4  B1[];   } inB1;
+layout(std430, binding = 7) readonly buffer Chi2Buf  { float Chi2[]; } inChi2;
+layout(std430, binding = 8) readonly buffer ValidBuf { uint  Valid[];} inValid;
+
+// Outputs (global sums for cap<=1024)
+layout(std430, binding = 10) writeonly buffer B0OutBuf    { vec4  B0Out;    } outB0;
+layout(std430, binding = 11) writeonly buffer B1OutBuf    { vec4  B1Out;    } outB1;
+layout(std430, binding = 12) writeonly buffer Chi2OutBuf  { float Chi2Out;  } outChi2;
+layout(std430, binding = 13) writeonly buffer ValidOutBuf { uint  ValidOut; } outValid;
+
+// shared reduction storage
+shared vec4  sB0[256];
+shared vec4  sB1[256];
+shared float sChi2[256];
+shared uint  sCnt[256];
+
+void main()
+{
+    const uint WG = 256u;
+    const uint PTS_PER_THREAD = 4u;   // 256*4 = 1024 coverage
+
+    uint tid = gl_LocalInvocationID.x;
+
+    vec4  b0 = vec4(0.0);
+    vec4  b1 = vec4(0.0);
+    float c2 = 0.0;
+    uint  ct = 0u;
+
+    uint base = tid * PTS_PER_THREAD;
+
+    // sum up to 4 points per thread
+    for (uint p = 0u; p < PTS_PER_THREAD; ++p)
+    {
+        uint idx = base + p;
+        if (idx >= uNPoints) break;
+
+        if (inValid.Valid[idx] != 0u)
+        {
+            b0 += inB0.B0[idx];
+            b1 += inB1.B1[idx];
+            c2 += inChi2.Chi2[idx];
+            ct += 1u;
+        }
+    }
+
+    sB0[tid] = b0;
+    sB1[tid] = b1;
+    sChi2[tid] = c2;
+    sCnt[tid] = ct;
+
+    barrier();
+
+    // tree reduce over 256 threads
+    for (uint stride = WG >> 1u; stride > 0u; stride >>= 1u)
+    {
+        if (tid < stride)
+        {
+            sB0[tid]   += sB0[tid + stride];
+            sB1[tid]   += sB1[tid + stride];
+            sChi2[tid] += sChi2[tid + stride];
+            sCnt[tid]  += sCnt[tid + stride];
+        }
+        barrier();
+    }
+
+    if (tid == 0u)
+    {
+        outB0.B0Out       = sB0[0];
+        outB1.B1Out       = sB1[0];
+        outChi2.Chi2Out   = sChi2[0];
+        outValid.ValidOut = sCnt[0];
+    }
+}
