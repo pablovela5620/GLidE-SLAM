@@ -52,7 +52,7 @@ namespace ORB_SLAM2
                                                                          mpKeyFrameDB(pKFDB),
                                                                          mpInitializer(
                                                                              static_cast<Initializer *>(NULL)),
-                                                                         mpSystem(pSys), mpViewer(NULL),
+                                                                         mpSystem(pSys), mpGPUEngine(NULL),
                                                                          mpMap(pMap), mnLastRelocFrameId(0)
     {
         // Load camera parameters from settings file
@@ -185,7 +185,7 @@ namespace ORB_SLAM2
 
     void Tracking::SetViewer(GPUEngine *pViewer)
     {
-        mpViewer = pViewer;
+        mpGPUEngine = pViewer;
     }
 
     cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRectRight, const double &timestamp)
@@ -285,7 +285,7 @@ namespace ORB_SLAM2
         Logger<std::string>::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
         //push image to viewer GPU (push 8bit, convert to 32F on GPU)
-        mpViewer->updateDirectFrame(mImGray,mLastDirectFrame.mTcw);
+        mpGPUEngine->updateDirectFrame(mImGray,mLastDirectFrame.mTcw);
 
         Track();
 
@@ -344,8 +344,15 @@ namespace ORB_SLAM2
                     CheckReplacedInLastFrame();
 
                     bool bDirectTrackRecovery = mCurrentDirectFrame.mnId < mpPrevDirectRefID + 3;
-                    mbDirectTrackOk = trackDirectIC(&mCurrentDirectFrame, &mLastDirectFrame, m_directTrackCache,
-                                                        false, mLastDirectChi2);
+                    // mbDirectTrackOk = trackDirectIC(&mCurrentDirectFrame, &mLastDirectFrame, m_directTrackCache,
+                    //                                     false, mLastDirectChi2);
+
+                    cv::Mat gpuResultPose;
+                    int gpuN;
+                    mbDirectTrackOk = mpGPUEngine->getTrackResult(gpuResultPose, mLastDirectChi2, gpuN);
+                    if (mbDirectTrackOk)
+                        mCurrentDirectFrame.SetPose(gpuResultPose);
+
                     bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                     mbUseDirectTracking = false;
                     if (mbDirectTrackOk && !bSwitchToIndirect)
@@ -1361,6 +1368,20 @@ namespace ORB_SLAM2
         mLastDirectFrame.m_pyrImg = mCurrentFrame.m_pyrImg;
         mCurrentFrame.computeImagePyramids(mImGray);
         trackPrecompute(mCurrentFrame, m_directTrackCache);
+
+        //GPU preCompute
+        std::vector<glm::vec4> mapPointsGLM;
+        mapPointsGLM.reserve(mCurrentFrame.mvpMapPoints.size());
+
+        for (MapPoint* pMP : mCurrentFrame.mvpMapPoints)
+        {
+            if (!pMP || pMP->isBad())
+                continue;
+            cv::Mat pos = pMP->GetWorldPos();
+            mapPointsGLM.emplace_back(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2), 1.0f);
+        }
+
+        mpGPUEngine->updateDirectRefFrame(mImGray, mapPointsGLM, mLastDirectFrame.mTcw);
     }
 
     bool Tracking::NeedNewDirectRef()
@@ -1636,7 +1657,7 @@ namespace ORB_SLAM2
         float maxRange = std::max({rangeX, rangeY, rangeZ});
         float sceneTargetSize = 50.0f;
 
-        mpViewer->setScaleFactor(sceneTargetSize/maxRange);
+        mpGPUEngine->setScaleFactor(sceneTargetSize/maxRange);
 
         mpLocalMapper->InsertKeyFrame(pKFini);
         mpLocalMapper->InsertKeyFrame(pKFcur);
@@ -2472,9 +2493,9 @@ namespace ORB_SLAM2
     void Tracking::Reset()
     {
         cout << "System Reseting" << endl;
-        if (mpViewer)
+        if (mpGPUEngine)
         {
-            mpViewer->exit();
+            mpGPUEngine->exit();
         }
 
         // Reset Local Mapping

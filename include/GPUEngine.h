@@ -901,9 +901,13 @@ class GPUCompute
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
     bool track(cv::Mat& pose, float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
+    bool getTrackResult(cv::Mat& pose, float& chi2, int& nMeasurements);
+    void resetTrackResult();
     bool shutDown();
 
 private:
+    void clearTrackReduction(const int Level);
+    void clearPreComputeReduction(const int Level);
     bool initializeImagePyramids();
     bool initializePreCompute();
     bool initializeTrack();
@@ -939,14 +943,15 @@ private:
 
     GPUEngineSettings* m_GPUEngineSettings{nullptr};
 
-    struct TrackResult
-    {
+    struct TrackResult {
         cv::Mat pose;
         float chi2{0.0f};
         int N{0};
         bool success{false};
-        std::atomic<bool> resultAvailable{false};
-    }m_gpuTrackResult;
+        bool ready{false};
+        std::mutex mutex;
+        std::condition_variable cv;
+    } m_gpuTrackResult;
 
 
 private:
@@ -1126,7 +1131,7 @@ public:
 
     void updateDirectFrame(const cv::Mat& image, const cv::Mat& pose);
     void updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose);
-    bool getTrackResult(cv::Mat& pose, float& chi2, int& nMeasurements, int timeoutMs = 50);
+    bool getTrackResult(cv::Mat& pose, float& chi2, int& N);
 private:
     void updateDirectTracking();
     void initializeWindows();

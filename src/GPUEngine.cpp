@@ -543,6 +543,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         //wait for completion
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
+        clearPreComputeReduction(L);
 
         //Second-phase: Reduce H:
         //Sum per-point partial
@@ -686,9 +687,9 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
 
     glUseProgram(m_trackShader);
-
     //uniforms independent of iteration/Level
     glUniform1i(m_uNpointsTrack, (GLint)m_nPoints);
+
     glUniform1i(m_uPatchSizeTrack, m_patchSize);
     glUniform1ui(m_uEnableAlignTrack, m_enableAlign);
     glUniform1ui(m_uSearchRadiusTrack, (GLuint)m_searchRadius);
@@ -772,6 +773,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+            clearTrackReduction(L);
 
             glUseProgram(m_red1TrackShader);
             glUniform1ui(m_uNpointsReduce1Track, (GLuint)m_nPoints);
@@ -924,7 +926,18 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
     " outN=" + std::to_string(outN));
 
     pose = Tcw.clone();
-    return true;
+
+    {
+        std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
+        m_gpuTrackResult.pose = Tcw.clone();
+        m_gpuTrackResult.chi2 = finalChi2Mean;
+        m_gpuTrackResult.N = outN;
+        m_gpuTrackResult.success = anyLevelOk;
+        m_gpuTrackResult.ready = true;
+    }
+    m_gpuTrackResult.cv.notify_one();
+
+    return anyLevelOk;
 }
 
 bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
@@ -1081,6 +1094,36 @@ bool GPUCompute::shutDown()
     return (glGetError() == GL_NO_ERROR);
 }
 
+void GPUCompute::clearTrackReduction(const int Level)
+{
+    glm::vec4 z4(0,0,0,0);
+    float zf = 0.0f;
+    uint32_t zu = 0u;
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_B0Level);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(glm::vec4), &z4);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_B1Level);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(glm::vec4), &z4);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_Chi2Level);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(float), &zf);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_isValidLevel);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(uint32_t), &zu);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void GPUCompute::clearPreComputeReduction(const int Level)
+{
+    auto& cacheLevel = m_preComputeCache[Level];
+    float zero21[21] = {0};
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_HLevel);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(zero21), zero21);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
 cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
 {
     size_t size = (size_t)w * (size_t)h * sizeof(float);
@@ -1119,6 +1162,27 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
     glUseProgram(0);
 
     return result;
+}
+
+bool GPUCompute::getTrackResult(cv::Mat& pose, float& chi2, int& N)
+{
+    std::unique_lock<std::mutex> lock(m_gpuTrackResult.mutex);
+    m_gpuTrackResult.cv.wait(lock, [this] { return m_gpuTrackResult.ready; });
+
+    pose = m_gpuTrackResult.pose.clone();
+    chi2 = m_gpuTrackResult.chi2;
+    N = m_gpuTrackResult.N;
+    bool success = m_gpuTrackResult.success;
+
+    m_gpuTrackResult.ready = false;
+
+    return success;
+}
+
+bool GPUEngine::getTrackResult(cv::Mat& pose, float& chi2, int& N)
+{
+    if (!m_gpuCompute) return false;
+    return m_gpuCompute->getTrackResult(pose, chi2, N);
 }
 
 bool GPUEngine::initialize()
@@ -1177,7 +1241,7 @@ bool GPUEngine::initialize()
         gpuComputeOk = false;
     }
 
-    if (m_gpuCompute->setShaders(m_shaders))
+    if (!m_gpuCompute->setShaders(m_shaders))
     {
         Logger<std::string>::LogError("GPUEngine: Failed to set shaders.");
         gpuComputeOk = false;
@@ -1233,10 +1297,7 @@ void GPUEngine::run()
         //     //updateDirectMapping();
         // }
 
-
         updateDirectTracking();
-
-
 
         render();
 
@@ -1328,30 +1389,6 @@ void GPUEngine::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4
     }
 }
 
-bool GPUEngine::getTrackResult(cv::Mat &pose, float &chi2, int &nMeasurements, int timeoutMs)
-{
-    if (!m_gpuCompute) return false;
-
-    auto start = std::chrono::steady_clock::now();
-
-    while (!m_gpuCompute->m_gpuTrackResult.resultAvailable.load())
-    {
-        auto elapsed = std::chrono::steady_clock::now() - start;
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= timeoutMs)
-            return false;
-
-        std::this_thread::sleep_for(std::chrono::microseconds(500));
-    }
-
-    pose = m_gpuCompute->m_gpuTrackResult.pose.clone();
-    chi2 = m_gpuCompute->m_gpuTrackResult.chi2;
-    nMeasurements = m_gpuCompute->m_gpuTrackResult.N;
-    bool success = m_gpuCompute->m_gpuTrackResult.success;
-
-    m_gpuCompute->m_gpuTrackResult.resultAvailable.store(false);
-
-    return success;
-}
 
 void GPUEngine::initializeWindows()
 {

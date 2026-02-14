@@ -187,7 +187,7 @@ protected:
     System* mpSystem;
     
     //Drawers
-    GPUEngine* mpViewer;
+    GPUEngine* mpGPUEngine;
     //FrameDrawer* mpFrameDrawer;
     //MapDrawer* mpMapDrawer;
 
