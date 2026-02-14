@@ -37,12 +37,12 @@ bool GPUCompute::initialize()
         Logger<std::string>::LogError("GPUCompute: Error at initialize ImagePyramids.");
         iniitalizeOk = false;
     }
-    if (initializePreCompute())
+    if (!initializePreCompute())
     {
         Logger<std::string>::LogError("GPUCompute: Error at initialize PreCompute.");
         iniitalizeOk = false;
     }
-    if (initializeTrack())
+    if (!initializeTrack())
     {
         Logger<std::string>::LogError("GPUCompute: Error at initialize Track.");
         iniitalizeOk = false;
@@ -152,7 +152,7 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
     // Create readback SSBO (size for largest level)
     glGenBuffers(1, &m_readbackSSBO);
 
-    return true;
+    return (glGetError() == GL_NO_ERROR);
 }
 
 bool GPUCompute::initializeImagePyramids()
@@ -954,6 +954,8 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
 bool GPUCompute::shutDown()
 {
+   Logger<std::string>::LogInfoI("GPUCompute: Shutting down.");
+
     glFinish();
 
     //cleanup map points buffer
@@ -1070,7 +1072,7 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
 bool GPUEngine::initialize()
 {
 
-    m_isInitialized = false;
+    m_isInitialized = true;
     m_width = m_GPUEngineSettings->gpuEngineParams.width;
     m_height = m_GPUEngineSettings->gpuEngineParams.height;
 
@@ -1095,11 +1097,13 @@ bool GPUEngine::initialize()
     if (m_windowFrames2D == nullptr)
     {
         Logger<std::string>::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
+        m_isInitialized = false;
     }
 
     if (m_windowMap3D == nullptr)
     {
         Logger<std::string>::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
+        m_isInitialized = false;
     }
 
 
@@ -1113,36 +1117,43 @@ bool GPUEngine::initialize()
 
     //initialize GPUCompute
     m_gpuCompute = new GPUCompute(m_GPUEngineSettings);
-    const int w = m_GPUEngineSettings->directTrackParams.width;
-    const int h = m_GPUEngineSettings->directTrackParams.height;
 
-    const float fx = m_GPUEngineSettings->directTrackParams.fx;
-    const float fy = m_GPUEngineSettings->directTrackParams.fy;
-    const float cx = m_GPUEngineSettings->directTrackParams.cx;
-    const float cy = m_GPUEngineSettings->directTrackParams.cy;
-
-    const int nLevels = m_GPUEngineSettings->directTrackParams.nLevels;
-    const int patchSize = m_GPUEngineSettings->directTrackParams.patchSize;
-    const float scaleFactor = m_GPUEngineSettings->directTrackParams.scaleFactor;
-
-
-
+    bool gpuComputeOk = true;
     if (!m_gpuCompute->initialize())
     {
         Logger<std::string>::LogError("GPUEngine: Failed to initialize GPUCompute.");
+        gpuComputeOk = false;
     }
 
-    m_gpuCompute->setShaders(m_shaders);
+    if (m_gpuCompute->setShaders(m_shaders))
+    {
+        Logger<std::string>::LogError("GPUEngine: Failed to set shaders.");
+        gpuComputeOk = false;
+    }
+    if (!gpuComputeOk)
+    {
+        m_gpuCompute->shutDown();
+        m_isInitialized = false;
+    }
 
-    Logger<std::string>::LogInfoIII("Viewer: Viewer initialized.");
-    m_isInitialized = true;
+    if (m_isInitialized)
+    {
+        Logger<std::string>::LogInfoI("GPUEngine: initialized.");
+    }
     return m_isInitialized;
 }
 
 void GPUEngine::run()
 {
     if (!m_isInitialized)
-        initialize();
+    {
+        if (!initialize())
+        {
+            //abort
+            Logger<std::string>::LogInfoI("GPUEngine: failed to initialize, aborting.");
+            m_stop.store(false);
+        }
+    }
     while(!m_stop.load())
     {
         m_newTime = static_cast<float>(SDL_GetTicks())/1000.0f;

@@ -896,11 +896,8 @@ class GPUCompute
     GPUCompute(){};
     GPUCompute(GPUEngineSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
     bool initialize();
-
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
-
     bool buildPyramid( cv::Mat& image);
-
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
     bool track(cv::Mat& pose, float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
