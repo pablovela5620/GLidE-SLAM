@@ -538,7 +538,7 @@ bool System::ReadConfigFile(const std::string &path, GPUEngineSettings *GPUEngin
     GPUEngineSettings->directTrackParams.maxPoints      = fs["DirTrackParams.maxPoints"];
     GPUEngineSettings->directTrackParams.enableAlign    = fs["DirTrackParams.enableAlign"];
     GPUEngineSettings->directTrackParams.searchRadius   = fs["DirTrackParams.searchRadius"];
-    GPUEngineSettings->directTrackParams.humberK        = fs["DirTrackParams.humberK"];
+    GPUEngineSettings->directTrackParams.huberK        = fs["DirTrackParams.huberK"];
 
     // vec4 (per-level thresholds)
     GPUEngineSettings->directTrackParams.searchThreshold = readInVector(fs, "DirTrackParams.searchThreshold", 0.0f);

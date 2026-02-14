@@ -895,7 +895,7 @@ class GPUCompute
 
     GPUCompute(){};
     GPUCompute(GPUEngineSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
-    void initialize();
+    bool initialize();
 
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
 
@@ -907,7 +907,7 @@ class GPUCompute
     bool shutDown();
 
 private:
-    void initializeImagePyramids();
+    bool initializeImagePyramids();
     bool initializePreCompute();
     bool initializeTrack();
 
@@ -1035,7 +1035,7 @@ private:
     static const GLuint TRACK_IN_MAPPOINTS      {0}; // m_ssboMapPoints (vec4 pos[])
     static const GLuint TRACK_IN_VALID          {1}; // preComputeCache[L].ssbo_isValid (uint[])
     static const GLuint TRACK_IN_I              {2}; // preComputeCache[L].ssbo_I (float[])
-    static const GLuint TRACK_IN_J             {3}; // preComputeCache[L].ssbo_J (float[])
+    static const GLuint TRACK_IN_J              {3}; // preComputeCache[L].ssbo_J (float[])
 
     // Outputs:
     static const GLuint TRACK_OUT_B0             {5}; // trackCache[L].ssbo_B0 (vec4[])

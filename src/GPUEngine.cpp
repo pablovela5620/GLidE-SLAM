@@ -1,6 +1,6 @@
 #include "GPUEngine.h"
 
-void GPUCompute::initialize()
+bool GPUCompute::initialize()
 {
     //TODO: Take all from gpuEngineSettings
     m_width = m_GPUEngineSettings->directTrackParams.width;
@@ -15,14 +15,14 @@ void GPUCompute::initialize()
     m_cx = m_GPUEngineSettings->directTrackParams.cx;
     m_cy = m_GPUEngineSettings->directTrackParams.cy;
 
-    m_enableAlign = 1u;
-    m_searchRadius = 3;
-    m_humberK = 0.08f;
+    m_enableAlign = m_GPUEngineSettings->directTrackParams.enableAlign;
+    m_searchRadius = m_GPUEngineSettings->directTrackParams.searchRadius;
+    m_humberK = m_GPUEngineSettings->directTrackParams.huberK;
 
     // Per-level thresholds
-    m_searchThreshold = glm::vec4(0.012f, 0.018f, 0.025f, 0.035f);
-    m_rejectThreshold = glm::vec4(0.025f, 0.035f, 0.050f, 0.070f);
-    m_maxShift = glm::vec4(3.0f, 4.0f, 5.0f, 6.0f);
+    m_searchThreshold = m_GPUEngineSettings->directTrackParams.searchThreshold;
+    m_rejectThreshold = m_GPUEngineSettings->directTrackParams.rejectThreshold;
+    m_maxShift = m_GPUEngineSettings->directTrackParams.maxShift;
 
     m_invScaleFactors.resize(m_nLevels);
     m_invScaleFactors[0] = 1.0f;
@@ -31,9 +31,24 @@ void GPUCompute::initialize()
         m_invScaleFactors[i] = (m_invScaleFactors[i - 1]/m_scaleFactor);
     }
 
-    initializeImagePyramids();
-    initializePreCompute();
-    initializeTrack();
+    bool iniitalizeOk = true;
+    if (!initializeImagePyramids())
+    {
+        Logger<std::string>::LogError("GPUCompute: Error at initialize ImagePyramids.");
+        iniitalizeOk = false;
+    }
+    if (initializePreCompute())
+    {
+        Logger<std::string>::LogError("GPUCompute: Error at initialize PreCompute.");
+        iniitalizeOk = false;
+    }
+    if (initializeTrack())
+    {
+        Logger<std::string>::LogError("GPUCompute: Error at initialize Track.");
+        iniitalizeOk = false;
+    }
+
+    return iniitalizeOk;
 }
 
 bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders)
@@ -140,7 +155,7 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
     return true;
 }
 
-void GPUCompute::initializeImagePyramids()
+bool GPUCompute::initializeImagePyramids()
 {
     //initialize level texture dimensions:
     m_levelWidth.resize(m_nLevels);
@@ -206,6 +221,8 @@ void GPUCompute::initializeImagePyramids()
 
 
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    return (glGetError() == GL_NO_ERROR);
 }
 
 bool GPUCompute::buildPyramid( cv::Mat& image)
@@ -383,7 +400,8 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
 
 bool GPUCompute::initializePreCompute()
 {
-    // This function generates pre-allocates buffers. The capacity is set to max. n. of points (parameter)
+    // This function generates pre-allocates buffers.
+    // certain parameters are set based a capped max. n. of points
     // this avoids allocating new buffers every frame.
 
     //Input buffer: map points allocate space for max. n of points
@@ -936,7 +954,77 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
 bool GPUCompute::shutDown()
 {
-    return true;
+    glFinish();
+
+    //cleanup map points buffer
+    if (m_ssboMapPoints)
+    {
+        glDeleteBuffers(1, &m_ssboMapPoints);
+        m_ssboMapPoints = 0;
+    }
+
+    //cleanup preCompute cache buffers
+    for (size_t L = 0; L < m_preComputeCache.size(); ++L)
+    {
+        PreComputeCache& c = m_preComputeCache[L];
+
+        if (c.ssbo_isValid) { glDeleteBuffers(1, &c.ssbo_isValid); c.ssbo_isValid = 0; }
+        if (c.ssbo_I)       { glDeleteBuffers(1, &c.ssbo_I);       c.ssbo_I       = 0; }
+        if (c.ssbo_J)       { glDeleteBuffers(1, &c.ssbo_J);       c.ssbo_J       = 0; }
+        if (c.ssbo_H)       { glDeleteBuffers(1, &c.ssbo_H);       c.ssbo_H       = 0; }
+        if (c.ssbo_HLevel)  { glDeleteBuffers(1, &c.ssbo_HLevel);  c.ssbo_HLevel  = 0; }
+    }
+    m_preComputeCache.clear();
+
+    //cleanup track cache buffers
+    for (size_t L = 0; L < m_trackCache.size(); ++L)
+    {
+        TrackCache& c = m_trackCache[L];
+
+        if (c.ssbo_B0)          { glDeleteBuffers(1, &c.ssbo_B0);          c.ssbo_B0 = 0; }
+        if (c.ssbo_B1)          { glDeleteBuffers(1, &c.ssbo_B1);          c.ssbo_B1 = 0; }
+        if (c.ssbo_Chi2)        { glDeleteBuffers(1, &c.ssbo_Chi2);        c.ssbo_Chi2 = 0; }
+        if (c.ssbo_isValid)     { glDeleteBuffers(1, &c.ssbo_isValid);     c.ssbo_isValid = 0; }
+        if (c.ssbo_Align)       { glDeleteBuffers(1, &c.ssbo_Align);       c.ssbo_Align = 0; }
+
+        if (c.ssbo_B0Level)     { glDeleteBuffers(1, &c.ssbo_B0Level);     c.ssbo_B0Level = 0; }
+        if (c.ssbo_B1Level)     { glDeleteBuffers(1, &c.ssbo_B1Level);     c.ssbo_B1Level = 0; }
+        if (c.ssbo_Chi2Level)   { glDeleteBuffers(1, &c.ssbo_Chi2Level);   c.ssbo_Chi2Level = 0; }
+        if (c.ssbo_isValidLevel){ glDeleteBuffers(1, &c.ssbo_isValidLevel);c.ssbo_isValidLevel = 0; }
+    }
+    m_trackCache.clear();
+
+
+    //cleanup textures
+    if (!m_pyrTexHandles.empty())
+    {
+        glDeleteTextures((GLsizei)m_pyrTexHandles.size(), m_pyrTexHandles.data());
+        m_pyrTexHandles.clear();
+    }
+    if (!m_tempTexHandles.empty())
+    {
+        glDeleteTextures((GLsizei)m_tempTexHandles.size(), m_tempTexHandles.data());
+        m_tempTexHandles.clear();
+    }
+    if (!m_blurTexHandles.empty())
+    {
+        glDeleteTextures((GLsizei)m_blurTexHandles.size(), m_blurTexHandles.data());
+        m_blurTexHandles.clear();
+    }
+
+    if (m_sourceTextureR8)
+    {
+        glDeleteTextures(1, &m_sourceTextureR8);
+        m_sourceTextureR8 = 0;
+    }
+
+    if (m_readbackSSBO)
+    {
+        glDeleteBuffers(1, &m_readbackSSBO);
+        m_readbackSSBO = 0;
+    }
+
+    return (glGetError() == GL_NO_ERROR);
 }
 
 cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
@@ -1006,13 +1094,12 @@ bool GPUEngine::initialize()
     initializeWindows();
     if (m_windowFrames2D == nullptr)
     {
-        Logger<std::string>::LogError("Viewer: Failed to initialize m_windowFrames2D window.");
-        return m_isInitialized;
+        Logger<std::string>::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
     }
 
     if (m_windowMap3D == nullptr)
     {
-        return m_isInitialized;
+        Logger<std::string>::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
     }
 
 
@@ -1040,7 +1127,10 @@ bool GPUEngine::initialize()
 
 
 
-    m_gpuCompute->initialize();
+    if (!m_gpuCompute->initialize())
+    {
+        Logger<std::string>::LogError("GPUEngine: Failed to initialize GPUCompute.");
+    }
 
     m_gpuCompute->setShaders(m_shaders);
 

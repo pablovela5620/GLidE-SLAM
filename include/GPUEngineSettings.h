@@ -72,7 +72,7 @@ struct GPUEngineSettings
 		int maxPoints{1024};
 		int enableAlign{0};
 		int searchRadius{3};
-		float humberK{0.08f};
+		float huberK{0.08f};
 		glm::vec4 searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
 		glm::vec4 rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
 		glm::vec4 maxShift{0.0f, 0.0f, 0.0f, 0.0f};
