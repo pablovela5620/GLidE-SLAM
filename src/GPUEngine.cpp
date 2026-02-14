@@ -669,8 +669,6 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
     cv::Mat Tcw = pose.clone();
 
 
-    const uint enableAlign = 0;
-
     //write to shader uniforms
     //uLevel and uK uniforms are level-dependent, so they are set in loop
     //uIteration is per iteration dependent, set in iteration loop
@@ -1328,6 +1326,31 @@ void GPUEngine::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4
         m_runPrecompute = true;
         m_directTrackDataAvailable = true;
     }
+}
+
+bool GPUEngine::getTrackResult(cv::Mat &pose, float &chi2, int &nMeasurements, int timeoutMs)
+{
+    if (!m_gpuCompute) return false;
+
+    auto start = std::chrono::steady_clock::now();
+
+    while (!m_gpuCompute->m_gpuTrackResult.resultAvailable.load())
+    {
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= timeoutMs)
+            return false;
+
+        std::this_thread::sleep_for(std::chrono::microseconds(500));
+    }
+
+    pose = m_gpuCompute->m_gpuTrackResult.pose.clone();
+    chi2 = m_gpuCompute->m_gpuTrackResult.chi2;
+    nMeasurements = m_gpuCompute->m_gpuTrackResult.N;
+    bool success = m_gpuCompute->m_gpuTrackResult.success;
+
+    m_gpuCompute->m_gpuTrackResult.resultAvailable.store(false);
+
+    return success;
 }
 
 void GPUEngine::initializeWindows()

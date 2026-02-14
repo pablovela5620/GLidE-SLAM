@@ -938,6 +938,17 @@ private:
     float m_cy{0.0f};
 
     GPUEngineSettings* m_GPUEngineSettings{nullptr};
+
+    struct TrackResult
+    {
+        cv::Mat pose;
+        float chi2{0.0f};
+        int N{0};
+        bool success{false};
+        std::atomic<bool> resultAvailable{false};
+    }m_gpuTrackResult;
+
+
 private:
     std::vector<GLuint> m_pyrTexHandles;
     std::vector<GLuint> m_tempTexHandles;
@@ -1115,6 +1126,7 @@ public:
 
     void updateDirectFrame(const cv::Mat& image, const cv::Mat& pose);
     void updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose);
+    bool getTrackResult(cv::Mat& pose, float& chi2, int& nMeasurements, int timeoutMs = 50);
 private:
     void updateDirectTracking();
     void initializeWindows();
@@ -1254,12 +1266,8 @@ private:
 
     //Compute Shaders (Image Processing)
     GPUCompute* m_gpuCompute{nullptr};
-    std::thread                m_computeThread;
-    std::mutex                 m_jobQueueMutex;
-    std::condition_variable    m_jobQueueCondition;
 
-    std::mutex                 m_publishMutex;
-    std::atomic<uint64_t>      m_publishSequence{0};
+
 
 };
 
