@@ -284,7 +284,7 @@ namespace ORB_SLAM2
 
         Logger<std::string>::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
-        //push image to viewer GPU (push 8bit, less bandwidth, convert to 32F on GPU)
+        //push image to viewer GPU (push 8bit, convert to 32F on GPU)
         mpViewer->updateDirectFrame(mImGray,mLastDirectFrame.mTcw);
 
         Track();

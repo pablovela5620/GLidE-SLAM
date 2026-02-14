@@ -335,66 +335,70 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
     glUseProgram(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    //TODO: Remove, only for testing how similar to Opencv image pyramids
-    std::vector<cv::Mat> m_pyrImg;
-    cv::Mat gray32f;
-    image.convertTo(gray32f, CV_32FC1, 1.0/255.0);
-    m_pyrImg.resize(m_nLevels);
-    m_pyrImg[0]    = gray32f;
-
-    //build image pyramids
-    for (int L = 1; L < m_nLevels; ++L)
+    bool debugDisplay = false;
+    if (debugDisplay)
     {
-        cv::Mat smoothed;
-        cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REPLICATE);
-        cv::resize(smoothed, m_pyrImg[L], cv::Size(m_levelWidth[L], m_levelHeight[L]), 0, 0, cv::INTER_LINEAR);
-    }
+        //TODO: Remove, only for testing how similar to Opencv image pyramids
+        std::vector<cv::Mat> m_pyrImg;
+        cv::Mat gray32f;
+        image.convertTo(gray32f, CV_32FC1, 1.0/255.0);
+        m_pyrImg.resize(m_nLevels);
+        m_pyrImg[0]    = gray32f;
 
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
-
-    for (int L = 1; L < m_nLevels; ++L)
-    {
-        int w = m_levelWidth[L];
-        int h = m_levelHeight[L];
-
-        cv::Mat gpuLevel = readbackTexture(m_pyrTexHandles[L], w, h);
-
-        double gpuMin, gpuMax;
-        cv::minMaxLoc(gpuLevel, &gpuMin, &gpuMax);
-        std::cout << "Level " << L << " (" << w << "x" << h << ") gpuMin=" << gpuMin << " gpuMax=" << gpuMax;
-
-        if (w == m_pyrImg[L].cols && h == m_pyrImg[L].rows)
+        //build image pyramids
+        for (int L = 1; L < m_nLevels; ++L)
         {
-            cv::Mat diff;
-            cv::absdiff(m_pyrImg[L], gpuLevel, diff);
-            double maxVal;
-            cv::minMaxLoc(diff, nullptr, &maxVal);
-            std::cout << " maxDiff=" << maxVal << " mean=" << cv::mean(diff)[0];
+            cv::Mat smoothed;
+            cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REPLICATE);
+            cv::resize(smoothed, m_pyrImg[L], cv::Size(m_levelWidth[L], m_levelHeight[L]), 0, 0, cv::INTER_LINEAR);
         }
-        std::cout << std::endl;
 
+        glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
-        if (w == m_pyrImg[L].cols && h == m_pyrImg[L].rows)
+        for (int L = 1; L < m_nLevels; ++L)
         {
-            cv::Mat diff;
-            cv::absdiff(m_pyrImg[L], gpuLevel, diff);
+            int w = m_levelWidth[L];
+            int h = m_levelHeight[L];
 
-            double minVal, maxVal;
-            cv::minMaxLoc(diff, &minVal, &maxVal);
-            std::cout << "L" << L << " maxDiff=" << maxVal << std::endl;
+            cv::Mat gpuLevel = readbackTexture(m_pyrTexHandles[L], w, h);
 
-            // Normalize to full 0-255 range so differences are visible
-            cv::Mat diffVis;
-            if (maxVal > 0.0)
-                diff.convertTo(diffVis, CV_8U, 255.0 / maxVal);
-            else
-                diffVis = cv::Mat::zeros(diff.size(), CV_8U);
+            double gpuMin, gpuMax;
+            cv::minMaxLoc(gpuLevel, &gpuMin, &gpuMax);
+            std::cout << "Level " << L << " (" << w << "x" << h << ") gpuMin=" << gpuMin << " gpuMax=" << gpuMax;
 
-            cv::imshow("Diff L" + std::to_string(L), diffVis);
+            if (w == m_pyrImg[L].cols && h == m_pyrImg[L].rows)
+            {
+                cv::Mat diff;
+                cv::absdiff(m_pyrImg[L], gpuLevel, diff);
+                double maxVal;
+                cv::minMaxLoc(diff, nullptr, &maxVal);
+                std::cout << " maxDiff=" << maxVal << " mean=" << cv::mean(diff)[0];
+            }
+            std::cout << std::endl;
+
+
+            if (w == m_pyrImg[L].cols && h == m_pyrImg[L].rows)
+            {
+                cv::Mat diff;
+                cv::absdiff(m_pyrImg[L], gpuLevel, diff);
+
+                double minVal, maxVal;
+                cv::minMaxLoc(diff, &minVal, &maxVal);
+                std::cout << "L" << L << " maxDiff=" << maxVal << std::endl;
+
+                // Normalize to full 0-255 range so differences are visible
+                cv::Mat diffVis;
+                if (maxVal > 0.0)
+                    diff.convertTo(diffVis, CV_8U, 255.0 / maxVal);
+                else
+                    diffVis = cv::Mat::zeros(diff.size(), CV_8U);
+
+                cv::imshow("Diff L" + std::to_string(L), diffVis);
+            }
         }
-    }
 
-    cv::waitKey(0);
+        cv::waitKey(0);
+    }
     return true;
 }
 
@@ -654,82 +658,6 @@ bool GPUCompute::initializeTrack()
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
-{
-    //read ssbo
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,0,(GLsizeiptr)numBytes,GL_MAP_READ_BIT);
-    if (!ptr)
-    {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        return false;
-    }
-    std::memcpy(destination, ptr, numBytes);
-
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    return (glGetError() == GL_NO_ERROR);
-}
-
-bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
-{
-    if (!hTemp) return false;
-    auto matrixTriangleIndex = [] (int a, int b)->int{int base = (a*6)-((a*(a-1))/2); return base + (b-a);};
-
-    H = Eigen::Matrix<float,6,6>::Zero();
-    for (size_t a = 0; a < 6; ++a)
-    {
-        for (size_t b = a; b < 6; ++b)
-        {
-            float value = hTemp[matrixTriangleIndex(a,b)];
-            H(a,b) = value;
-            H(b,a) = value;
-        }
-    }
-
-    return (!H.isZero());
-}
-
-cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
-{
-    cv::Vec3f w(xi(0), xi(1), xi(2));   // omega
-    cv::Vec3f v(xi(3), xi(4), xi(5));   // v (translation twist)
-
-    float th = cv::norm(w);
-    cv::Matx33f I = cv::Matx33f::eye();
-    cv::Matx33f W(   0,   -w[2],  w[1],
-                   w[2],     0,  -w[0],
-                  -w[1],  w[0],     0 );
-    cv::Matx33f W2 = W * W;
-
-    cv::Matx33f R = I, V = I;
-
-    if (th > 1e-8f)
-    {
-        float s_over_th   = std::sin(th) / th;
-        float one_mc_over = (1.f - std::cos(th)) / (th*th);
-        float th_ms_over  = (th - std::sin(th)) / (th*th*th);
-
-        R = I + s_over_th * W + one_mc_over * W2;
-        V = I + one_mc_over * W + th_ms_over * W2;
-    }
-    else
-    {
-        // series: R ≈ I + W,  V ≈ I + 0.5 W + (1/6) W^2
-        R = I + W;
-        V = I + 0.5f * W + (1.f/6.f) * W2;
-    }
-
-    cv::Vec3f t = V * v;
-
-    cv::Matx44f T = cv::Matx44f::eye();
-    for (int i=0;i<3;i++)
-        for (int j=0;j<3;j++)
-            T(i,j) = R(i,j);
-    T(0,3) = t[0]; T(1,3) = t[1]; T(2,3) = t[2];
-    return T;
-}
-
 bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 {
     if (pose.empty()) return false;
@@ -798,7 +726,9 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
         bool hadValidIteration = false;
         uint32_t bestValidPts = 0u;
 
-
+        //debug stats
+        int levelIters = 0;
+        float levelStartChi = 0.0f;
 
         for (size_t iteration = 0; iteration < maxIters; ++iteration)
         {
@@ -894,10 +824,22 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
                 return false;
             }
 
+
             int nTotalMeasurements = (int)validPts * (int)m_patchArea;
-            if (nTotalMeasurements < minMeasurements) break;
+            if (nTotalMeasurements < minMeasurements)
+            {
+                Logger<std::string>::LogWarning(
+                    "GPU Track: L=" + std::to_string(L) +
+                    " iter=" + std::to_string(iteration) +
+                    " too few meas=" + std::to_string(nTotalMeasurements) +
+                    " validPts=" + std::to_string(validPts) +
+                    "/" + std::to_string(m_nPoints));
+                break;
+            }
             float chiMean = chiSum / (float)nTotalMeasurements;
 
+            if (iteration == 0) levelStartChi = chiMean;
+            levelIters = iteration + 1;
 
             //Chi is expected to decrease per iteration, if not use last best pose
             if (chiMean < bestChi)
@@ -914,6 +856,9 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
                 {
                     Tcw = bestT.clone();
                     hadValidIteration = true;
+                    Logger<std::string>::LogWarning(
+                   "GPU Track: L=" + std::to_string(L) + " Diverged 3x: Chi2 mean=" + std::to_string(chiMean)+
+                   " rolling back to bestChi=" + std::to_string(bestChi));
                     break;
                 }
             }
@@ -922,7 +867,13 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             b << b0.x, b0.y, b0.z, b0.w, b1.x, b1.y;
 
             Eigen::Matrix<float,6,1> delta = H.ldlt().solve(b);
-            if (!delta.allFinite()) break;
+            if (!delta.allFinite())
+            {
+                Logger<std::string>::LogError("GPU Track: L=" + std::to_string(L) +
+                " iter=" + std::to_string(iteration) +
+                  " delta not finite.");
+                break;
+            }
 
             hadValidIteration = true;
 
@@ -930,14 +881,35 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             Tcw = Tcw * cv::Mat(se3exp(xi));
 
             if (delta.norm() < epsNorm)
+            {
+                Logger<std::string>::LogInfoI(
+                        "GPU Track: L=" + std::to_string(L) +
+                        " iter=" + std::to_string(iteration) +
+                        " converged (|delta|=" + std::to_string(delta.norm()) + " < " + std::to_string(epsNorm) + ")");
                 break;
+            }
         }
 
+
         if (!hadValidIteration)
+        {
+            Logger<std::string>::LogError(
+                "GPU Track: L=" + std::to_string(L) +
+                " failed (no valid iteration)");
             return false;
+        }
+
 
         anyLevelOk = true;
         Tcw = bestT.clone();
+
+        Logger<std::string>::LogInfoII(
+        "GPU Track: L=" + std::to_string(L) +
+        " DONE iters=" + std::to_string(levelIters) +
+        " chi2: " + std::to_string(levelStartChi) +
+        " -> " + std::to_string(bestChi) +
+        " validPts=" + std::to_string(bestValidPts) +
+        "/" + std::to_string(m_nPoints));
 
         if (L == 0)
         {
@@ -948,9 +920,91 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
     }
 
+    Logger<std::string>::LogInfoIII(
+    "GPU Track: " + std::string(anyLevelOk ? "SUCCESS" : "FAILED") +
+    " finalChi2=" + std::to_string(finalChi2Mean) +
+    " outN=" + std::to_string(outN));
+
     pose = Tcw.clone();
     return true;
 }
+
+bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
+{
+    //read ssbo
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    void* ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,0,(GLsizeiptr)numBytes,GL_MAP_READ_BIT);
+    if (!ptr)
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        return false;
+    }
+    std::memcpy(destination, ptr, numBytes);
+
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    return (glGetError() == GL_NO_ERROR);
+}
+
+bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
+{
+    if (!hTemp) return false;
+    auto matrixTriangleIndex = [] (int a, int b)->int{int base = (a*6)-((a*(a-1))/2); return base + (b-a);};
+
+    H = Eigen::Matrix<float,6,6>::Zero();
+    for (size_t a = 0; a < 6; ++a)
+    {
+        for (size_t b = a; b < 6; ++b)
+        {
+            float value = hTemp[matrixTriangleIndex(a,b)];
+            H(a,b) = value;
+            H(b,a) = value;
+        }
+    }
+
+    return (!H.isZero());
+}
+
+cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
+{
+    cv::Vec3f w(xi(0), xi(1), xi(2));   // omega
+    cv::Vec3f v(xi(3), xi(4), xi(5));   // v (translation twist)
+
+    float th = cv::norm(w);
+    cv::Matx33f I = cv::Matx33f::eye();
+    cv::Matx33f W(   0,   -w[2],  w[1],
+                   w[2],     0,  -w[0],
+                  -w[1],  w[0],     0 );
+    cv::Matx33f W2 = W * W;
+
+    cv::Matx33f R = I, V = I;
+
+    if (th > 1e-8f)
+    {
+        float s_over_th   = std::sin(th) / th;
+        float one_mc_over = (1.f - std::cos(th)) / (th*th);
+        float th_ms_over  = (th - std::sin(th)) / (th*th*th);
+
+        R = I + s_over_th * W + one_mc_over * W2;
+        V = I + one_mc_over * W + th_ms_over * W2;
+    }
+    else
+    {
+        // series: R ≈ I + W,  V ≈ I + 0.5 W + (1/6) W^2
+        R = I + W;
+        V = I + 0.5f * W + (1.f/6.f) * W2;
+    }
+
+    cv::Vec3f t = V * v;
+
+    cv::Matx44f T = cv::Matx44f::eye();
+    for (int i=0;i<3;i++)
+        for (int j=0;j<3;j++)
+            T(i,j) = R(i,j);
+    T(0,3) = t[0]; T(1,3) = t[1]; T(2,3) = t[2];
+    return T;
+}
+
 
 bool GPUCompute::shutDown()
 {
