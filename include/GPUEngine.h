@@ -902,7 +902,6 @@ class GPUCompute
     bool track(cv::Mat& pose, float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
     bool getTrackResult(cv::Mat& pose, float& chi2, int& nMeasurements);
-    void resetTrackResult();
     bool shutDown();
 
 private:

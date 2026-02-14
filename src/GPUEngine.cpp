@@ -543,7 +543,7 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
         //wait for completion
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
-        clearPreComputeReduction(L);
+        //clearPreComputeReduction(L);
 
         //Second-phase: Reduce H:
         //Sum per-point partial
@@ -773,7 +773,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-            clearTrackReduction(L);
+            //clearTrackReduction(L);
 
             glUseProgram(m_red1TrackShader);
             glUniform1ui(m_uNpointsReduce1Track, (GLuint)m_nPoints);
@@ -1015,7 +1015,6 @@ cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
     T(0,3) = t[0]; T(1,3) = t[1]; T(2,3) = t[2];
     return T;
 }
-
 
 bool GPUCompute::shutDown()
 {
