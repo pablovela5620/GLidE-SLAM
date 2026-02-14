@@ -661,11 +661,30 @@ bool GPUCompute::initializeTrack()
 
 bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 {
-    if (pose.empty()) return false;
-    if (pose.type() != CV_32FC1) return false;
-    if (m_nLevels <= 0) return false;
-    if (m_nPoints == 0 || m_nPoints > m_maxPoints) return false;
+    if (pose.empty() || pose.type() != CV_32FC1 || m_nLevels <= 0 || m_nPoints == 0 || m_nPoints > m_maxPoints)
+    {
+        std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
+        m_gpuTrackResult.pose = cv::Mat();
+        m_gpuTrackResult.chi2 = 0.0f;
+        m_gpuTrackResult.N = 0;
+        m_gpuTrackResult.success = false;
+        m_gpuTrackResult.ready = true;
+        m_gpuTrackResult.cv.notify_one();
+        return false;
+    }
 
+    auto publishFail = [&]()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
+            m_gpuTrackResult.pose = cv::Mat();
+            m_gpuTrackResult.chi2 = 0.0f;
+            m_gpuTrackResult.N = 0;
+            m_gpuTrackResult.success = false;
+            m_gpuTrackResult.ready = true;
+        }
+        m_gpuTrackResult.cv.notify_one();
+    };
 
     cv::Mat Tcw = pose.clone();
 
@@ -708,6 +727,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
         if (!readSSBO(m_preComputeCache[L].ssbo_HLevel,Htemp,sizeof(Htemp)))
         {
             Logger<std::string>::LogError("Could not read H Level. Aborting.");
+            publishFail();
             return false;
         }
         rebuildH(H,Htemp);
@@ -715,6 +735,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
         if (H.diagonal().minCoeff() < 1e-6f)
         {
             Logger<std::string>::LogError("H diagonal coefficients too small! Aborting.");
+            publishFail();
             return false;
         }
 
@@ -806,21 +827,25 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             if (!readSSBO(m_trackCache[L].ssbo_B0Level, &b0, sizeof(glm::vec4)))
             {
                 Logger<std::string>::LogError("Could not read B0 Level. Aborting.");
+                publishFail();
                 return false;
             }
             if (!readSSBO(m_trackCache[L].ssbo_B1Level, &b1, sizeof(glm::vec4)))
             {
                 Logger<std::string>::LogError("Could not read B1 Level. Aborting.");
+                publishFail();
                 return false;
             }
             if (!readSSBO(m_trackCache[L].ssbo_Chi2Level, &chiSum, sizeof(float)))
             {
                 Logger<std::string>::LogError("Could not read chi2 Level. Aborting.");
+                publishFail();
                 return false;
             }
             if (!readSSBO(m_trackCache[L].ssbo_isValidLevel, &validPts, sizeof(uint32_t)))
             {
                 Logger<std::string>::LogError("Could not read valid Level. Aborting.");
+                publishFail();
                 return false;
             }
 
@@ -896,6 +921,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             Logger<std::string>::LogError(
                 "GPU Track: L=" + std::to_string(L) +
                 " failed (no valid iteration)");
+            publishFail();
             return false;
         }
 
