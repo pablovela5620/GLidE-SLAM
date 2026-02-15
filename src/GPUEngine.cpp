@@ -34,17 +34,17 @@ bool GPUCompute::initialize()
     bool iniitalizeOk = true;
     if (!initializeImagePyramids())
     {
-        Logger<std::string>::LogError("GPUCompute: Error at initialize ImagePyramids.");
+        Logger::LogError("GPUCompute: Error at initialize ImagePyramids.");
         iniitalizeOk = false;
     }
     if (!initializePreCompute())
     {
-        Logger<std::string>::LogError("GPUCompute: Error at initialize PreCompute.");
+        Logger::LogError("GPUCompute: Error at initialize PreCompute.");
         iniitalizeOk = false;
     }
     if (!initializeTrack())
     {
-        Logger<std::string>::LogError("GPUCompute: Error at initialize Track.");
+        Logger::LogError("GPUCompute: Error at initialize Track.");
         iniitalizeOk = false;
     }
 
@@ -55,47 +55,47 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
 {
     auto it = shaders.find("convert8UCTo32FShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: convert8UCTo32FShader"); return false; }
+        { Logger::LogError("Failed to load: convert8UCTo32FShader"); return false; }
     GLuint convert8To32FShader = it->second->getHandle();
 
     it = shaders.find("gauss32FShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: gauss32FShader"); return false; }
+        { Logger::LogError("Failed to load: gauss32FShader"); return false; }
     GLuint gaussShader32FShader = it->second->getHandle();
 
     it = shaders.find("resizeShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: resizeShader"); return false; }
+        { Logger::LogError("Failed to load: resizeShader"); return false; }
     GLuint resizeShader = it->second->getHandle();
 
     it = shaders.find("copyToSSBOShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: copyToSSBOShader"); return false; }
+        { Logger::LogError("Failed to load: copyToSSBOShader"); return false; }
     GLuint ssboShader = it->second->getHandle();
 
     it = shaders.find("preComputeShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: preComputeShader"); return false; }
+        { Logger::LogError("Failed to load: preComputeShader"); return false; }
     GLuint preComputeShader = it->second->getHandle();
 
     it = shaders.find("redPreComputeH1Shader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: redPreComputeH1Shader"); return false; }
+        { Logger::LogError("Failed to load: redPreComputeH1Shader"); return false; }
     GLuint redPreComputeH1Shader = it->second->getHandle();
 
     it = shaders.find("redPreComputeH2Shader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: redPreComputeH2Shader"); return false; }
+        { Logger::LogError("Failed to load: redPreComputeH2Shader"); return false; }
     GLuint redPreComputeH2Shader = it->second->getHandle();
 
     it = shaders.find("trackShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: trackShader"); return false; }
+        { Logger::LogError("Failed to load: trackShader"); return false; }
     GLuint trackShader = it->second->getHandle();
 
     it = shaders.find("redTrackShader");
     if (it == shaders.end() || !it->second)
-        { Logger<std::string>::LogError("Failed to load: redTrackShader"); return false; }
+        { Logger::LogError("Failed to load: redTrackShader"); return false; }
     GLuint redTrackShader = it->second->getHandle();
 
 
@@ -448,7 +448,7 @@ bool GPUCompute::initializePreCompute()
             || cacheLevel.ssbo_H == 0
             || cacheLevel.ssbo_HLevel == 0)
         {
-            Logger<std::string>::LogError("Error at SSBOs generation; initializePreCompute.");
+            Logger::LogError("Error at SSBOs generation; initializePreCompute.");
             return false;
         }
 
@@ -620,7 +620,7 @@ bool GPUCompute::initializeTrack()
             || cacheLevel.ssbo_Chi2Level == 0
             || cacheLevel.ssbo_isValidLevel == 0)
         {
-            Logger<std::string>::LogError("Error at SSBOs generation; initializeTrack.");
+            Logger::LogError("Error at SSBOs generation; initializeTrack.");
             return false;
         }
 
@@ -736,7 +736,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
         float Htemp[21];
         if (!readSSBO(m_preComputeCache[L].ssbo_HLevel,Htemp,sizeof(Htemp)))
         {
-            Logger<std::string>::LogError("Could not read H Level. Aborting.");
+            Logger::LogError("Could not read H Level. Aborting.");
             publishFail();
             return false;
         }
@@ -744,7 +744,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
         if (H.diagonal().minCoeff() < 1e-6f)
         {
-            Logger<std::string>::LogError("H diagonal coefficients too small! Aborting.");
+            Logger::LogError("H diagonal coefficients too small! Aborting.");
             publishFail();
             return false;
         }
@@ -836,25 +836,25 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
             if (!readSSBO(m_trackCache[L].ssbo_B0Level, &b0, sizeof(glm::vec4)))
             {
-                Logger<std::string>::LogError("Could not read B0 Level. Aborting.");
+                Logger::LogError("Could not read B0 Level. Aborting.");
                 publishFail();
                 return false;
             }
             if (!readSSBO(m_trackCache[L].ssbo_B1Level, &b1, sizeof(glm::vec4)))
             {
-                Logger<std::string>::LogError("Could not read B1 Level. Aborting.");
+                Logger::LogError("Could not read B1 Level. Aborting.");
                 publishFail();
                 return false;
             }
             if (!readSSBO(m_trackCache[L].ssbo_Chi2Level, &chiSum, sizeof(float)))
             {
-                Logger<std::string>::LogError("Could not read chi2 Level. Aborting.");
+                Logger::LogError("Could not read chi2 Level. Aborting.");
                 publishFail();
                 return false;
             }
             if (!readSSBO(m_trackCache[L].ssbo_isValidLevel, &validPts, sizeof(uint32_t)))
             {
-                Logger<std::string>::LogError("Could not read valid Level. Aborting.");
+                Logger::LogError("Could not read valid Level. Aborting.");
                 publishFail();
                 return false;
             }
@@ -863,7 +863,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             int nTotalMeasurements = (int)validPts * (int)m_patchArea;
             if (nTotalMeasurements < minMeasurements)
             {
-                Logger<std::string>::LogWarning(
+                Logger::LogWarning(
                     "GPU Track: L=" + std::to_string(L) +
                     " iter=" + std::to_string(iteration) +
                     " too few meas=" + std::to_string(nTotalMeasurements) +
@@ -891,7 +891,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
                 {
                     Tcw = bestT.clone();
                     hadValidIteration = true;
-                    Logger<std::string>::LogWarning(
+                    Logger::LogWarning(
                    "GPU Track: L=" + std::to_string(L) + " Diverged 3x: Chi2 mean=" + std::to_string(chiMean)+
                    " rolling back to bestChi=" + std::to_string(bestChi));
                     break;
@@ -904,7 +904,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             Eigen::Matrix<float,6,1> delta = H.ldlt().solve(b);
             if (!delta.allFinite())
             {
-                Logger<std::string>::LogError("GPU Track: L=" + std::to_string(L) +
+                Logger::LogError("GPU Track: L=" + std::to_string(L) +
                 " iter=" + std::to_string(iteration) +
                   " delta not finite.");
                 break;
@@ -917,7 +917,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
             if (delta.norm() < epsNorm)
             {
-                Logger<std::string>::LogInfoI(
+                Logger::LogInfoI(
                         "GPU Track: L=" + std::to_string(L) +
                         " iter=" + std::to_string(iteration) +
                         " converged (|delta|=" + std::to_string(delta.norm()) + " < " + std::to_string(epsNorm) + ")");
@@ -928,7 +928,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
         if (!hadValidIteration)
         {
-            Logger<std::string>::LogError(
+            Logger::LogError(
                 "GPU Track: L=" + std::to_string(L) +
                 " failed (no valid iteration)");
             publishFail();
@@ -939,7 +939,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
         anyLevelOk = true;
         Tcw = bestT.clone();
 
-        Logger<std::string>::LogInfoII(
+        Logger::LogInfoII(
         "GPU Track: L=" + std::to_string(L) +
         " DONE iters=" + std::to_string(levelIters) +
         " chi2: " + std::to_string(levelStartChi) +
@@ -956,7 +956,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
     }
 
-    Logger<std::string>::LogInfoIII(
+    Logger::LogInfoIII(
     "GPU Track: " + std::string(anyLevelOk ? "SUCCESS" : "FAILED") +
     " finalChi2=" + std::to_string(finalChi2Mean) +
     " outN=" + std::to_string(outN));
@@ -1054,7 +1054,7 @@ cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
 
 bool GPUCompute::shutDown()
 {
-   Logger<std::string>::LogInfoI("GPUCompute: Shutting down.");
+   Logger::LogInfoI("GPUCompute: Shutting down.");
 
     glFinish();
 
@@ -1248,13 +1248,13 @@ bool GPUEngine::initialize()
     initializeWindows();
     if (m_windowFrames2D == nullptr)
     {
-        Logger<std::string>::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
+        Logger::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
         m_isInitialized = false;
     }
 
     if (m_windowMap3D == nullptr)
     {
-        Logger<std::string>::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
+        Logger::LogError("GPUEngine: Failed to initialize m_windowFrames2D window.");
         m_isInitialized = false;
     }
 
@@ -1273,13 +1273,13 @@ bool GPUEngine::initialize()
     bool gpuComputeOk = true;
     if (!m_gpuCompute->initialize())
     {
-        Logger<std::string>::LogError("GPUEngine: Failed to initialize GPUCompute.");
+        Logger::LogError("GPUEngine: Failed to initialize GPUCompute.");
         gpuComputeOk = false;
     }
 
     if (!m_gpuCompute->setShaders(m_shaders))
     {
-        Logger<std::string>::LogError("GPUEngine: Failed to set shaders.");
+        Logger::LogError("GPUEngine: Failed to set shaders.");
         gpuComputeOk = false;
     }
     if (!gpuComputeOk)
@@ -1290,7 +1290,7 @@ bool GPUEngine::initialize()
 
     if (m_isInitialized)
     {
-        Logger<std::string>::LogInfoI("GPUEngine: initialized.");
+        Logger::LogInfoI("GPUEngine: initialized.");
     }
     return m_isInitialized;
 }
@@ -1302,7 +1302,7 @@ void GPUEngine::run()
         if (!initialize())
         {
             //abort
-            Logger<std::string>::LogInfoI("GPUEngine: failed to initialize, aborting.");
+            Logger::LogInfoI("GPUEngine: failed to initialize, aborting.");
             m_stop.store(false);
         }
     }
@@ -1393,12 +1393,12 @@ void GPUEngine::updateDirectTracking()
 
     if (doPrecompute)
     {
-        Logger<std::string>::LogInfoI("GPUEngine: Calling preCompute.");
+        Logger::LogInfoI("GPUEngine: Calling preCompute.");
         m_gpuCompute->preCompute(pts, pose);
     }
     else if (doTrack)
     {
-        Logger<std::string>::LogInfoI("GPUEngine: Calling track.");
+        Logger::LogInfoI("GPUEngine: Calling track.");
         m_gpuCompute->track(pose,outChi2,outN);
     }
 }
@@ -1409,6 +1409,8 @@ void GPUEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
         return;
 
     {
+        Logger::LogInfoI("GPUEngine: updating new frame.");
+
         std::lock_guard<std::mutex> lock(m_directTrackingMutex);
 
         //avoid interrupt precompute (this should not happen anyway)
@@ -1426,7 +1428,7 @@ void GPUEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapP
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
     {
-        Logger<std::string>::LogInfoI("GPUEngine: updating ref frame.");
+        Logger::LogInfoI("GPUEngine: updating ref frame.");
         std::lock_guard<std::mutex> lock(m_directTrackingMutex);
         m_sourceImage = image.clone();
         m_slamMapPoints = std::move(mapPoints);
@@ -1445,7 +1447,7 @@ void GPUEngine::initializeWindows()
     m_windowFrames2D = GuiWindow::createWindow(50, heightOffset, m_width, m_height, m_windowFramesTitle);
     if (!m_windowFrames2D)
     {
-       Logger<std::string>::LogError("Viewer: Failed to initialize m_windowFrames2D tracking window.");
+       Logger::LogError("Viewer: Failed to initialize m_windowFrames2D tracking window.");
         return;
     }
 
@@ -1490,7 +1492,7 @@ void GPUEngine::initializeWindows()
     m_uiEventManager.subscribe(EventTypes::WindowResize,[this](const UIEvent& e){ this->onWindow(e); });
 
     printVersions();
-    Logger<std::string>::LogInfoIII("Viewer: All windows initialized.");
+    Logger::LogInfoIII("Viewer: All windows initialized.");
 }
 
 void GPUEngine::render()
@@ -1984,7 +1986,7 @@ void GPUEngine::shutdown()
     stop();
 
     //TODO: Make sure delete all allocated objects, deference pointers
-    Logger<std::string>::LogInfoI("Viewer: Shutting down.");
+    Logger::LogInfoI("Viewer: Shutting down.");
 
     // Delete map contents
     for (auto& pair : m_keyFramesGfx)
@@ -2077,13 +2079,13 @@ void GPUEngine::onKeyboard(const UIEvent &e)
                 {
                     if (m_pauseSimulation.load())
                     {
-                        Logger<std::string>::LogInfoI("Viewer: Un-Pausing simulation.");
+                        Logger::LogInfoI("Viewer: Un-Pausing simulation.");
                         m_pauseSimulation.store(false);
                         //m_slamManager->onUnPause();
                     }
                     else
                     {
-                        Logger<std::string>::LogInfoI("Viewer: Pausing simulation.");
+                        Logger::LogInfoI("Viewer: Pausing simulation.");
                         m_pauseSimulation.store(true);
                     }
                 }
@@ -2275,7 +2277,7 @@ void GPUEngine::initializeBuffers()
     glDrawBuffers(1, drawBuffers);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    Logger<std::string>::LogInfoIII("Viewer: Frame buffers initialized.");
+    Logger::LogInfoIII("Viewer: Frame buffers initialized.");
 }
 
 void GPUEngine::initializeMapPoints()
@@ -2286,7 +2288,7 @@ void GPUEngine::initializeMapPoints()
     m_mapPointsRefGfx = new PointCloud();
     m_mapPointsRefGfx->initializeEmptyBuffer();
 
-    Logger<std::string>::LogInfoIII("Viewer: Point cloud maps initialized.");
+    Logger::LogInfoIII("Viewer: Point cloud maps initialized.");
 }
 
 void GPUEngine::initializeCamera()
@@ -2422,7 +2424,7 @@ bool Shader::link()
         std::cout << strInfoLog << std::endl;
         delete[] strInfoLog;
         if (!m_shaderName.empty())
-            Logger<std::string>::LogError(m_shaderName + " shader linking failed!");
+            Logger::LogError(m_shaderName + " shader linking failed!");
         return false;
     }
 
@@ -2438,7 +2440,7 @@ bool Shader::link()
     detachAndDeleteShaders();
 
     if (!m_shaderName.empty())
-        Logger<std::string>::LogInfoI(m_shaderName + " shader linked and loaded successfully.");
+        Logger::LogInfoI(m_shaderName + " shader linked and loaded successfully.");
     return true;
 }
 
@@ -3444,13 +3446,13 @@ void PointCloud::updatePoints(const std::vector<glm::vec3> &points,const std::ve
 
 GuiWindow::GuiWindow() : m_width(800), m_height(600), m_title("ImageSLAM")
 {
-    Logger<std::string>::LogInfoIV("\n Viewer: Creating window:" + m_title);
+    Logger::LogInfoIV("\n Viewer: Creating window:" + m_title);
     initializeWindow(EGL_NO_CONTEXT);
 }
 
 GuiWindow::GuiWindow(int x, int y, int width, int height, const std::string &title) : m_xOffset(x), m_yOffset(y), m_width(width), m_height(height), m_title(title)
 {
-    Logger<std::string>::LogInfoIV("\n Viewer: Creating window:" + m_title);
+    Logger::LogInfoIV("\n Viewer: Creating window:" + m_title);
     initializeWindow(EGL_NO_CONTEXT);
 }
 
@@ -3458,7 +3460,7 @@ GuiWindow::GuiWindow(int x, int y, int width, int height, const std::string &tit
 GuiWindow::GuiWindow(int x, int y, int width, int height, const std::string &title, EGLContext otherContext, EGLDisplay otherDisplay, EGLConfig otherConfig)
     : m_xOffset(x), m_yOffset(y), m_width(width),m_height(height), m_title(title)
 {
-    Logger<std::string>::LogInfoIV("\n Viewer: Creating window:" + m_title);
+    Logger::LogInfoIV("\n Viewer: Creating window:" + m_title);
     initializeWindowShared(otherContext, otherDisplay, otherConfig);
 }
 
@@ -3502,30 +3504,30 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        Logger<std::string>::LogError("Unable to initialize SDL: " + std::string(SDL_GetError()));
+        Logger::LogError("Unable to initialize SDL: " + std::string(SDL_GetError()));
         return false;
     } else
     {
-        Logger<std::string>::LogInfoI("Initialized SDL" + std::string(SDL_GetError()));
+        Logger::LogInfoI("Initialized SDL" + std::string(SDL_GetError()));
     }
 
     int displayIndex = 0;
     SDL_Rect displayBounds;
     if (SDL_GetDisplayBounds(displayIndex, &displayBounds) < 0)
     {
-        Logger<std::string>::LogError("Failed to get display bounds");
+        Logger::LogError("Failed to get display bounds");
     }
 
     m_window = SDL_CreateWindow(m_title.c_str(), displayBounds.x + m_xOffset, displayBounds.y + m_yOffset,
                                 m_width, m_height, SDL_WINDOW_OPENGL);
     if (m_window == NULL)
     {
-        Logger<std::string>::LogError("Unable to create window SDL: " + std::string(SDL_GetError()));
+        Logger::LogError("Unable to create window SDL: " + std::string(SDL_GetError()));
         SDL_Quit();
         return false;
     } else
     {
-        Logger<std::string>::LogInfoI("Created window SDL" + std::string(SDL_GetError()));
+        Logger::LogInfoI("Created window SDL" + std::string(SDL_GetError()));
     }
 
 
@@ -3545,7 +3547,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
         {
             EGLint error = eglGetError();
             const char *errorMessage = eglGetErrorString(error);
-            Logger<std::string>::LogError("Failed to choose EGL config" + std::string(errorMessage));
+            Logger::LogError("Failed to choose EGL config" + std::string(errorMessage));
             SDL_DestroyWindow(m_window);
             SDL_Quit();
             return false;
@@ -3561,7 +3563,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     if (!eglBindAPI(EGL_OPENGL_ES_API))
     {
         EGLint error = eglGetError();
-        Logger<std::string>::LogError("eglBindAPI(OpenGL ES) failed: " + std::to_string(error));
+        Logger::LogError("eglBindAPI(OpenGL ES) failed: " + std::to_string(error));
         return false;
     }
 
@@ -3573,7 +3575,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to create shared EGL context" + std::string(errorMessage));
+        Logger::LogError("Failed to create shared EGL context" + std::string(errorMessage));
         SDL_DestroyWindow(m_window);
         SDL_Quit();
         return false;
@@ -3581,7 +3583,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("Shared EGL context created ok " + std::string(errorMessage));
+        Logger::LogInfoI("Shared EGL context created ok " + std::string(errorMessage));
     }
 
     // ------------------------------------------------------------
@@ -3593,7 +3595,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to create EGL window surface" + std::string(errorMessage));
+        Logger::LogError("Failed to create EGL window surface" + std::string(errorMessage));
         SDL_DestroyWindow(m_window);
         SDL_Quit();
         return false;
@@ -3601,14 +3603,14 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL window surface created ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL window surface created ok " + std::string(errorMessage));
     }
 
     if (!eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext))
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to make shared EGL current" + std::string(errorMessage));
+        Logger::LogError("Failed to make shared EGL current" + std::string(errorMessage));
         eglDestroySurface(m_eglDisplay, m_eglSurface);
         eglDestroyContext(m_eglDisplay, m_eglContext);
         SDL_DestroyWindow(m_window);
@@ -3618,14 +3620,14 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("Shared EGL made current ok " + std::string(errorMessage));
+        Logger::LogInfoI("Shared EGL made current ok " + std::string(errorMessage));
     }
 
     eglSwapInterval(m_eglDisplay, 1);
 
     if (!gladLoadGLES2Loader((GLADloadproc) eglGetProcAddress))
     {
-        Logger<std::string>::LogError("Failed to initialize GLAD");
+        Logger::LogError("Failed to initialize GLAD");
     }
 
     setUICallBacks();
@@ -3654,29 +3656,29 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        Logger<std::string>::LogError("Unable to initialize SDL: " + std::string(SDL_GetError()));
+        Logger::LogError("Unable to initialize SDL: " + std::string(SDL_GetError()));
         return false;
     } else
     {
-        Logger<std::string>::LogInfoI("Initialized SDL" + std::string(SDL_GetError()));
+        Logger::LogInfoI("Initialized SDL" + std::string(SDL_GetError()));
     }
 
     int displayIndex = 0;
     SDL_Rect displayBounds;
     if (SDL_GetDisplayBounds(displayIndex, &displayBounds) < 0)
     {
-        Logger<std::string>::LogError("Failed to get display bounds");
+        Logger::LogError("Failed to get display bounds");
     }
 
     m_window = SDL_CreateWindow(m_title.c_str(), displayBounds.x + m_xOffset, displayBounds.y + m_yOffset, m_width,m_height, SDL_WINDOW_OPENGL);
     if (m_window == NULL)
     {
-        Logger<std::string>::LogError("Unable to create window SDL: " + std::string(SDL_GetError()));
+        Logger::LogError("Unable to create window SDL: " + std::string(SDL_GetError()));
         SDL_Quit();
         return false;
     } else
     {
-        Logger<std::string>::LogInfoI("Created window SDL" + std::string(SDL_GetError()));
+        Logger::LogInfoI("Created window SDL" + std::string(SDL_GetError()));
     }
 
 
@@ -3685,7 +3687,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to get EGL display" + std::string(errorMessage));
+        Logger::LogError("Failed to get EGL display" + std::string(errorMessage));
         SDL_DestroyWindow(m_window);
         SDL_Quit();
         return false;
@@ -3693,14 +3695,14 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL display ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL display ok " + std::string(errorMessage));
     }
 
     if (!eglInitialize(m_eglDisplay, NULL, NULL))
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to initialize EGL" + std::string(errorMessage));
+        Logger::LogError("Failed to initialize EGL" + std::string(errorMessage));
         eglTerminate(m_eglDisplay);
         SDL_DestroyWindow(m_window);
         SDL_Quit();
@@ -3709,7 +3711,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL initialized ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL initialized ok " + std::string(errorMessage));
     }
 
 
@@ -3718,7 +3720,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to choose EGL config" + std::string(errorMessage));
+        Logger::LogError("Failed to choose EGL config" + std::string(errorMessage));
         eglTerminate(m_eglDisplay);
         SDL_DestroyWindow(m_window);
         SDL_Quit;
@@ -3727,7 +3729,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL config chosen ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL config chosen ok " + std::string(errorMessage));
     }
 
 
@@ -3738,7 +3740,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     if (!eglBindAPI(EGL_OPENGL_ES_API))
     {
         EGLint error = eglGetError();
-        Logger<std::string>::LogError("eglBindAPI(OpenGL ES) failed: " + std::to_string(error));
+        Logger::LogError("eglBindAPI(OpenGL ES) failed: " + std::to_string(error));
         return false;
     }
 
@@ -3748,7 +3750,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to create EGL context" + std::string(errorMessage));
+        Logger::LogError("Failed to create EGL context" + std::string(errorMessage));
         eglTerminate(m_eglDisplay);
         SDL_DestroyWindow(m_window);
         SDL_Quit();
@@ -3757,7 +3759,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL context created ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL context created ok " + std::string(errorMessage));
     }
     m_eglSurface = eglCreateWindowSurface(m_eglDisplay, m_eglConfig, (EGLNativeWindowType) sysInfo.info.x11.window,
                                           NULL);
@@ -3766,7 +3768,7 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to create EGL window surface" + std::string(errorMessage));
+        Logger::LogError("Failed to create EGL window surface" + std::string(errorMessage));
         eglTerminate(m_eglDisplay);
         SDL_DestroyWindow(m_window);
         SDL_Quit();
@@ -3775,14 +3777,14 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL window surface created ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL window surface created ok " + std::string(errorMessage));
     }
 
     if (!eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext))
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogError("Failed to make EGL current" + std::string(errorMessage));
+        Logger::LogError("Failed to make EGL current" + std::string(errorMessage));
         eglDestroySurface(m_eglDisplay, m_eglSurface);
         eglDestroyContext(m_eglDisplay, m_eglContext);
         eglTerminate(m_eglDisplay);
@@ -3793,14 +3795,14 @@ bool GuiWindow::initializeWindow(EGLContext sharedContext)
     {
         EGLint error = eglGetError();
         const char *errorMessage = eglGetErrorString(error);
-        Logger<std::string>::LogInfoI("EGL made current ok " + std::string(errorMessage));
+        Logger::LogInfoI("EGL made current ok " + std::string(errorMessage));
     }
 
     eglSwapInterval(m_eglDisplay, 1);
 
     if (!gladLoadGLES2Loader((GLADloadproc) eglGetProcAddress))
     {
-        Logger<std::string>::LogError("Failed to initialize GLAD");
+        Logger::LogError("Failed to initialize GLAD");
     }
 
     setUICallBacks();

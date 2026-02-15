@@ -2,8 +2,8 @@
 // Created by caps on 1/10/26.
 //
 
-#ifndef ORB_SLAM2_LOGGER_H
-#define ORB_SLAM2_LOGGER_H
+#ifndef GLIDE_SLAM_LOGGER
+#define GLIDE_SLAM_LOGGER
 
 
 #include <iostream>
@@ -37,13 +37,12 @@
 #define WIN_FOREGROUND_WHITE (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE)
 #define WIN_FOREGROUND_YELLOW (FOREGROUND_RED | FOREGROUND_GREEN)
 
-template <typename T>
 class Logger
 {
 public:
     static std::mutex logMutex;
 
-    static void LogInfoThread(const T& msg)
+    static void LogInfoThread(const std::string& msg)
     {
         //standard color
         std::string color = BRIGHT_WHITE_TEXT;
@@ -51,7 +50,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogInfoMapper(const T& msg)
+    static void LogInfoMapper(const std::string& msg)
     {
         //standard color
         std::string color = MAGENTA_TEXT;
@@ -59,21 +58,21 @@ public:
         log(prefix, msg);
     }
 
-    static void LogInfoWhite(const T& msg)
+    static void LogInfoWhite(const std::string& msg)
     {
         std::string color = WHITE_TEXT;
         std::string prefix = color;
         log(prefix, msg);
     }
 
-    static void LogInfoGray(const T& msg)
+    static void LogInfoGray(const std::string& msg)
     {
         std::string color = GRAY_TEXT;
         std::string prefix = color;
         log(prefix, msg);
     }
 
-    static void LogInfoI(const T& msg)
+    static void LogInfoI(const std::string& msg)
     {
         //standard color
         std::string color = BLUE_TEXT;
@@ -81,7 +80,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogInfoII(const T& msg)
+    static void LogInfoII(const std::string& msg)
     {
         //standard color
         std::string color = WHITE_TEXT;
@@ -89,7 +88,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogInfoIII(const T& msg)
+    static void LogInfoIII(const std::string& msg)
     {
         //standard color
         std::string color = GREEN_TEXT;
@@ -97,7 +96,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogInfoIV(const T& msg)
+    static void LogInfoIV(const std::string& msg)
     {
         //standard color
         std::string color = CYAN_TEXT;
@@ -105,7 +104,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogTime(const T& msg)
+    static void LogTime(const std::string& msg)
     {
         //standard color
         std::string color = CYAN_TEXT;
@@ -113,7 +112,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogWarning(const T& msg)
+    static void LogWarning(const std::string& msg)
     {
         //standard color
         std::string color = YELLOW_TEXT;
@@ -121,7 +120,7 @@ public:
         log(prefix, msg);
     }
 
-    static void LogError(const T& msg)
+    static void LogError(const std::string& msg)
     {
         //standard color
         std::string color = RED_TEXT;
@@ -130,15 +129,12 @@ public:
     }
 
 private:
-    static void log(const std::string& prefix, const T& msg)
+    static void log(const std::string& color, const std::string& msg)
     {
-        //auto now = std::chrono::system_clock::now();
-        //std::time_t time = std::chrono::system_clock::to_time_t(now);
         std::lock_guard<std::mutex> lock(logMutex);
-        std::clog << prefix << msg << WHITE_TEXT << std::endl;
+        std::clog << color << msg << RESET_TEXT << '\n';
     }
 };
 
-template <typename T>
-std::mutex Logger<T>::logMutex;
-#endif //ORB_SLAM2_LOGGER_H
+std::mutex Logger::logMutex;
+#endif //GLIDE_SLAM_LOGGER

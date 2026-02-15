@@ -282,7 +282,7 @@ namespace ORB_SLAM2
             mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
         }
 
-        Logger<std::string>::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
+        Logger::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
         //push image to viewer GPU (push 8bit, convert to 32F on GPU)
         mpGPUEngine->updateNewFrame(mImGray,mLastDirectFrame.mTcw);
@@ -294,7 +294,7 @@ namespace ORB_SLAM2
         std::string indirectTweenFrame = "indFrames.txt";
         std::string directTweenFrame = "dFrames.txt";
 
-        //Logger<std::string>::LogInfoII("\n Timestamp: " + to_string(timestamp));
+        //Logger::LogInfoII("\n Timestamp: " + to_string(timestamp));
         if (mTweenFrameData.size() > 0) WriteTweenFrameData(indirectTweenFrame, mTweenFrameData, mCurrentFrame.mnId);
         if (mDTweenFrameData.size() > 0) WriteTweenFrameData(directTweenFrame, mDTweenFrameData, mCurrentFrame.mnId);
 
@@ -630,7 +630,7 @@ namespace ORB_SLAM2
 
         cv::Mat Tcw = newFrame->mTcw;
 
-        Logger<std::string>::LogInfoIII(
+        Logger::LogInfoIII(
             "Direct Tracker: Frames: " + std::to_string(newFrame->mnId) + " - " + std::to_string(mpPrevDirectRefID) +
             " levels=" + std::to_string(dtCache.size()) +
             " useMotion=" + std::to_string((int) useMotion));
@@ -661,7 +661,7 @@ namespace ORB_SLAM2
             const cv::Mat &InewFrame = newFrame->m_pyrImg[level];
             if (InewFrame.empty())
             {
-                Logger<std::string>::LogError("Direct Tracker: Could not track, I new is empty");
+                Logger::LogError("Direct Tracker: Could not track, I new is empty");
                 return false;
             }
 
@@ -897,7 +897,7 @@ namespace ORB_SLAM2
                     // Log once per level at iter==0
                     if (completeLog)
                     {
-                        Logger<std::string>::LogInfoI(
+                        Logger::LogInfoI(
                             "ALIGN: L=" + std::to_string(level) +
                             " valid=" + std::to_string(nValid) +
                             " searched=" + std::to_string(nSearched) +
@@ -980,7 +980,7 @@ namespace ORB_SLAM2
 
                 if (n < 16 * 3)
                 {
-                    Logger<std::string>::LogError(
+                    Logger::LogError(
                         "Direct: L=" + std::to_string(level) +
                         " iter=" + std::to_string(iter) +
                         " too few meas=" + std::to_string(n) +
@@ -993,7 +993,7 @@ namespace ORB_SLAM2
 
                 if (H.diagonal().minCoeff() < 1e-6f)
                 {
-                    Logger<std::string>::LogError(
+                    Logger::LogError(
                         "DirectIC: L=" + std::to_string(level) +
                         " singular H, minDiag=" + std::to_string(H.diagonal().minCoeff()));
                     break;
@@ -1003,7 +1003,7 @@ namespace ORB_SLAM2
 
                 if (completeLog)
                 {
-                    Logger<std::string>::LogInfoI(
+                    Logger::LogInfoI(
                         "DirectIC: L=" + std::to_string(level) +
                         " iter=" + std::to_string(iter) +
                         " chi2=" + std::to_string(chi2Mean) +
@@ -1036,7 +1036,7 @@ namespace ORB_SLAM2
 
                 if (iter == 0 && level == 0)
                 {
-                    Logger<std::string>::LogInfoIII(
+                    Logger::LogInfoIII(
                         "DIAG: meanSignedRes=" + std::to_string(meanSignedRes) +
                         " chi2=" + std::to_string(chi2Mean));
                 }
@@ -1049,7 +1049,7 @@ namespace ORB_SLAM2
 
                 if (!delta.allFinite())
                 {
-                    Logger<std::string>::LogError(
+                    Logger::LogError(
                         "DirectIC: L=" + std::to_string(level) +
                         " iter=" + std::to_string(iter) +
                         " delta not finite");
@@ -1083,19 +1083,19 @@ namespace ORB_SLAM2
             } else if (hadValidIteration)
             {
                 Tcw = bestTcw.clone();
-                Logger<std::string>::LogWarning(
+                Logger::LogWarning(
                     "DirectIC: L=" + std::to_string(level) +
                     " best-effort pose (no convergence), bestChi2=" + std::to_string(bestChi2));
             } else
             {
-                Logger<std::string>::LogWarning(
+                Logger::LogWarning(
                     "DirectIC: L=" + std::to_string(level) +
                     " failed (no valid iteration).");
             }
 
             if (!converged)
             {
-                Logger<std::string>::LogWarning(
+                Logger::LogWarning(
                     "DirectIC: L=" + std::to_string(level) +
                     " max iter reached, chi2=" + std::to_string(lastChi2));
             }
@@ -1115,24 +1115,24 @@ namespace ORB_SLAM2
         chi2 = finalChi2;
         if (!anyConverged)
         {
-            Logger<std::string>::LogError("DirectIC: REJECT,  no level converged");
+            Logger::LogError("DirectIC: REJECT,  no level converged");
             return false;
         }
 
         if (finalChi2 > 0.0045f)
         {
-            Logger<std::string>::LogError("DirectIC: REJECT, chi2 too high (" + std::to_string(finalChi2) + ")");
+            Logger::LogError("DirectIC: REJECT, chi2 too high (" + std::to_string(finalChi2) + ")");
             return false;
         }
 
-        Logger<std::string>::LogInfoIII("DirectIC: SUCCESS, final chi2: " + std::to_string(finalChi2));
+        Logger::LogInfoIII("DirectIC: SUCCESS, final chi2: " + std::to_string(finalChi2));
         newFrame->SetPose(Tcw);
         return true;
     }
 
     bool Tracking::trackPrecompute(const Frame &frame, std::vector<DirectTrackCache> &dtCache)
     {
-        Logger<std::string>::LogInfoIII(
+        Logger::LogInfoIII(
             "Direct Tracker: Precompute IC on reference frame: " + std::to_string(frame.mnId));
 
         //static const int nLevels = 4;
@@ -1147,7 +1147,7 @@ namespace ORB_SLAM2
             const cv::Mat &Iref = frame.m_pyrImg[level];
             if (Iref.empty())
             {
-                Logger<std::string>::LogError("Direct Tracker: Level " + std::to_string(level) + " image empty");
+                Logger::LogError("Direct Tracker: Level " + std::to_string(level) + " image empty");
                 return false;
             }
 
@@ -1214,7 +1214,7 @@ namespace ORB_SLAM2
 
             if (L.pointData.size() < 20)
             {
-                Logger<std::string>::LogError(
+                Logger::LogError(
                     "Direct Tracker: Level " + std::to_string(level) + " too few points: " + std::to_string(
                         L.pointData.size()));
                 return false;
@@ -1252,7 +1252,7 @@ namespace ORB_SLAM2
 
         if ((c1a || c1b || bTrackingWeak) && bQualityDegrading)
         {
-            Logger<std::string>::LogInfoI("Switch to Indirect tracking: " + std::to_string(mCurrentFrame.mnId) +
+            Logger::LogInfoI("Switch to Indirect tracking: " + std::to_string(mCurrentFrame.mnId) +
                                           ", More than max frames=" + c1aString +
                                           ", More than min frames=" + c1bString +
                                           ", Tracking too weak=" + c1cString +
@@ -1303,7 +1303,7 @@ namespace ORB_SLAM2
             mvpLocalDirectInliers.push_back(dp.mapPoint);
         }
 
-        Logger<std::string>::LogInfoIII("direct inliers matches: " + std::to_string(mvpLocalDirectInliers.size()));
+        Logger::LogInfoIII("direct inliers matches: " + std::to_string(mvpLocalDirectInliers.size()));
         return (int) mvpLocalDirectInliers.size();
     }
 
@@ -1421,7 +1421,7 @@ namespace ORB_SLAM2
         for (MapPoint *mp: indirectSet)
             if (!directSet.count(mp)) indirectOnly++;
 
-        Logger<std::string>::LogInfoIII(
+        Logger::LogInfoIII(
             "Direct vs Indirect: both=" + std::to_string(both) +
             " directOnly=" + std::to_string(directOnly) +
             " indirectOnly=" + std::to_string(indirectOnly));
@@ -1624,7 +1624,7 @@ namespace ORB_SLAM2
         pKFcur->UpdateConnections();
 
         // Bundle Adjustment
-        Logger<std::string>::LogInfoII(
+        Logger::LogInfoII(
             "New Map created with " + std::to_string(mpMap->MapPointsInMap()) + " points. Frames: " +
             std::to_string(mCurrentFrame.mnId) + " - " + std::to_string(mInitialFrame.mnId));
 
@@ -1720,7 +1720,7 @@ namespace ORB_SLAM2
 
     bool Tracking::TrackReferenceKeyFrame()
     {
-        Logger<std::string>::LogInfoII(
+        Logger::LogInfoII(
             "Indirect Tracker: Tracking with Ref Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
             std::to_string(mpReferenceKF->mnFrameId));
 
@@ -1762,7 +1762,7 @@ namespace ORB_SLAM2
             }
         }
 
-        Logger<std::string>::LogInfoII("Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
+        Logger::LogInfoII("Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
 
         return nmatchesMap >= 10;
     }
@@ -1834,7 +1834,7 @@ namespace ORB_SLAM2
 
     bool Tracking::TrackWithMotionModel()
     {
-        Logger<std::string>::LogInfoII(
+        Logger::LogInfoII(
             "Indirect Tracker: Tracking with motion model Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
             std::to_string(mLastFrame.mnId));
 
@@ -1896,7 +1896,7 @@ namespace ORB_SLAM2
             return nmatches > 20;
         }
 
-        Logger<std::string>::LogInfoII("Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
+        Logger::LogInfoII("Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
 
         return nmatchesMap >= 10;
     }
@@ -2022,7 +2022,7 @@ namespace ORB_SLAM2
             // Otherwise send a signal to interrupt BA
             if (bLocalMappingIdle)
             {
-                Logger<std::string>::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
+                Logger::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
                                               ", More than max frames=" + c1aString +
                                               ", More than min frames=" + c1bString +
                                               ", Tracking is weak=" + c1cString +
@@ -2037,7 +2037,7 @@ namespace ORB_SLAM2
                 {
                     if (mpLocalMapper->KeyframesInQueue() < 3)
                     {
-                        Logger<std::string>::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
+                        Logger::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
                                                       ", More than max frames=" + c1aString +
                                                       ", More than min frames=" + c1bString +
                                                       ", Tracking is weak=" + c1cString +

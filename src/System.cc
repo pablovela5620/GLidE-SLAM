@@ -526,7 +526,7 @@ bool System::ReadConfigFile(const std::string &path, GPUEngineSettings *GPUEngin
       cv::FileStorage fs(path, cv::FileStorage::READ);
     if (!fs.isOpened())
     {
-        Logger<std::string>::LogError("Failed to open configuration file.");
+        Logger::LogError("Failed to open configuration file.");
         return false;
     }
 
