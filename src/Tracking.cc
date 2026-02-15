@@ -285,7 +285,7 @@ namespace ORB_SLAM2
         Logger<std::string>::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
         //push image to viewer GPU (push 8bit, convert to 32F on GPU)
-        mpGPUEngine->updateDirectFrame(mImGray,mLastDirectFrame.mTcw);
+        mpGPUEngine->updateNewFrame(mImGray,mLastDirectFrame.mTcw);
 
         Track();
 
@@ -327,7 +327,8 @@ namespace ORB_SLAM2
 
             if (mState != OK)
                 return;
-        } else
+        }
+        else
         {
             // System is initialized. Track Frame.
             bool bOK;
@@ -343,13 +344,18 @@ namespace ORB_SLAM2
                     // Local Mapping might have changed some MapPoints tracked in last frame
                     CheckReplacedInLastFrame();
 
+
+                    //Perform direct tracking (CPU)
                     bool bDirectTrackRecovery = mCurrentDirectFrame.mnId < mpPrevDirectRefID + 3;
                     // mbDirectTrackOk = trackDirectIC(&mCurrentDirectFrame, &mLastDirectFrame, m_directTrackCache,
                     //                                     false, mLastDirectChi2);
 
                     cv::Mat gpuResultPose;
                     int gpuN;
+
+                    //By this time, the pose should be ready!
                     mbDirectTrackOk = mpGPUEngine->getTrackResult(gpuResultPose, mLastDirectChi2, gpuN);
+
                     if (mbDirectTrackOk)
                         mCurrentDirectFrame.SetPose(gpuResultPose);
 
@@ -464,7 +470,8 @@ namespace ORB_SLAM2
                         FetchPosandRot(mCurrentDirectFrame.mTimeStamp, mCurrentDirectFrame.mRwc,
                                        mCurrentDirectFrame.mtwc, directTweenFrameData);
                         mDTweenFrameData = directTweenFrameData;
-                    } else
+                    }
+                    else
                     {
                         std::vector<double> indirectTweenFrameData;
                         FetchPosandRot(mCurrentFrame.mTimeStamp, mCurrentFrame.mRwc, mCurrentFrame.mtwc,
@@ -1367,7 +1374,7 @@ namespace ORB_SLAM2
         mLastDirectFrame = FrameDirect(mCurrentFrame);
         mLastDirectFrame.m_pyrImg = mCurrentFrame.m_pyrImg;
         mCurrentFrame.computeImagePyramids(mImGray);
-        trackPrecompute(mCurrentFrame, m_directTrackCache);
+        //trackPrecompute(mCurrentFrame, m_directTrackCache);
 
         //GPU preCompute
         std::vector<glm::vec4> mapPointsGLM;
@@ -1381,7 +1388,7 @@ namespace ORB_SLAM2
             mapPointsGLM.emplace_back(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2), 1.0f);
         }
 
-        mpGPUEngine->updateDirectRefFrame(mImGray, mapPointsGLM, mLastDirectFrame.mTcw);
+        mpGPUEngine->updateRefFrame(mImGray, mapPointsGLM, mLastDirectFrame.mTcw);
     }
 
     bool Tracking::NeedNewDirectRef()

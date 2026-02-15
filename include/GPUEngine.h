@@ -1128,8 +1128,8 @@ public:
     void setPause() {m_pauseSimulation.store(true);}
     void setScaleFactor(const float scale) { m_scaleFactor = scale; }
 
-    void updateDirectFrame(const cv::Mat& image, const cv::Mat& pose);
-    void updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose);
+    void updateNewFrame(const cv::Mat& image, const cv::Mat& pose);
+    void updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose);
     bool getTrackResult(cv::Mat& pose, float& chi2, int& N);
 private:
     void updateDirectTracking();

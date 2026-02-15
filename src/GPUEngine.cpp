@@ -54,40 +54,50 @@ bool GPUCompute::initialize()
 bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders)
 {
     auto it = shaders.find("convert8UCTo32FShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: convert8UCTo32FShader"); return false; }
     GLuint convert8To32FShader = it->second->getHandle();
 
     it = shaders.find("gauss32FShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: gauss32FShader"); return false; }
     GLuint gaussShader32FShader = it->second->getHandle();
 
     it = shaders.find("resizeShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: resizeShader"); return false; }
     GLuint resizeShader = it->second->getHandle();
 
     it = shaders.find("copyToSSBOShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: copyToSSBOShader"); return false; }
     GLuint ssboShader = it->second->getHandle();
 
     it = shaders.find("preComputeShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: preComputeShader"); return false; }
     GLuint preComputeShader = it->second->getHandle();
 
     it = shaders.find("redPreComputeH1Shader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: redPreComputeH1Shader"); return false; }
     GLuint redPreComputeH1Shader = it->second->getHandle();
 
     it = shaders.find("redPreComputeH2Shader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: redPreComputeH2Shader"); return false; }
     GLuint redPreComputeH2Shader = it->second->getHandle();
 
     it = shaders.find("trackShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: trackShader"); return false; }
     GLuint trackShader = it->second->getHandle();
 
     it = shaders.find("redTrackShader");
-    if (it == shaders.end() || !it->second) return false;
+    if (it == shaders.end() || !it->second)
+        { Logger<std::string>::LogError("Failed to load: redTrackShader"); return false; }
     GLuint redTrackShader = it->second->getHandle();
+
 
     // make sure shader handles loaded
     if (convert8To32FShader == 0 ||
@@ -1192,7 +1202,8 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
 bool GPUCompute::getTrackResult(cv::Mat& pose, float& chi2, int& N)
 {
     std::unique_lock<std::mutex> lock(m_gpuTrackResult.mutex);
-    m_gpuTrackResult.cv.wait(lock, [this] { return m_gpuTrackResult.ready; });
+    if (!m_gpuTrackResult.ready) return false;
+
 
     pose = m_gpuTrackResult.pose.clone();
     chi2 = m_gpuTrackResult.chi2;
@@ -1328,7 +1339,9 @@ void GPUEngine::run()
 
         //get framerate (this is from viewer only!)
         float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
-        SDL_Delay(33);
+
+        //TODO: TEST WITH SDL_DELAY OR NOT, CURRENTLY REMOVED!
+        //SDL_Delay(33);
     }
 }
 
@@ -1342,7 +1355,7 @@ void GPUEngine::updateDirectTracking()
     float outChi2 = 0.0f;
     int outN = 0;
 
-    //use buffer copies:
+    //use buffer copies (safety):
     //1-> producer writes to m_sourceImage (deep copy in update functionss using .clone()) -> buffer A
     //2-> consumer does shallow copy img = m_sourceImage, shares buffer A (ref count)
     //3-> if producer overwrites m_sourceImage (clone()), m_sourceImage points to buffer B
@@ -1355,6 +1368,7 @@ void GPUEngine::updateDirectTracking()
             img = m_sourceImage; //img points to specific address
             pose = m_initialPose;
 
+            //decide to run precompute on Ref frame or direct tracking in new frame
             if (m_runPrecompute)
             {
                 pts.swap(m_slamMapPoints);
@@ -1371,18 +1385,25 @@ void GPUEngine::updateDirectTracking()
         }
     }
 
+    //first step (either precompute/direct tracking, build image pyramids)
     if (!img.empty())
     {
         m_gpuCompute->buildPyramid(img);
     }
 
     if (doPrecompute)
+    {
+        Logger<std::string>::LogInfoI("GPUEngine: Calling preCompute.");
         m_gpuCompute->preCompute(pts, pose);
+    }
     else if (doTrack)
+    {
+        Logger<std::string>::LogInfoI("GPUEngine: Calling track.");
         m_gpuCompute->track(pose,outChi2,outN);
+    }
 }
 
-void GPUEngine::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
+void GPUEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
@@ -1400,11 +1421,12 @@ void GPUEngine::updateDirectFrame(const cv::Mat &image, const cv::Mat &pose)
     }
 }
 
-void GPUEngine::updateDirectRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
+void GPUEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
     {
+        Logger<std::string>::LogInfoI("GPUEngine: updating ref frame.");
         std::lock_guard<std::mutex> lock(m_directTrackingMutex);
         m_sourceImage = image.clone();
         m_slamMapPoints = std::move(mapPoints);
@@ -2170,12 +2192,12 @@ void GPUEngine::initializeShaders()
     m_shaders["convert8UCTo32FShader"] = convert8UCTo32FShader;
 
     shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> gaussShader32F = std::make_shared<Shader>();
-    gaussShader32F->setHandle(shaderProgram);
-    gaussShader32F->compile(GL_COMPUTE_SHADER, "shaders/gauss32FShader.comp");
-    gaussShader32F->setShaderName("gaussShader32F");
-    gaussShader32F->link();
-    m_shaders["gaussShader32F"] = gaussShader32F;
+    std::shared_ptr<Shader> gauss32FShader = std::make_shared<Shader>();
+    gauss32FShader->setHandle(shaderProgram);
+    gauss32FShader->compile(GL_COMPUTE_SHADER, "shaders/gauss32FShader.comp");
+    gauss32FShader->setShaderName("gauss32FShader");
+    gauss32FShader->link();
+    m_shaders["gauss32FShader"] = gauss32FShader;
 
     shaderProgram = glCreateProgram();
     std::shared_ptr<Shader> resizeShader = std::make_shared<Shader>();
@@ -2210,12 +2232,32 @@ void GPUEngine::initializeShaders()
     m_shaders["redPreComputeH2Shader"] = redPreComputeH2Shader;
 
     shaderProgram = glCreateProgram();
-    std::shared_ptr<Shader> copySSBO = std::make_shared<Shader>();
-    copySSBO->setHandle(shaderProgram);
-    copySSBO->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBOShader.comp");
-    copySSBO->setShaderName("copyToSSBO");
-    copySSBO->link();
-    m_shaders["copyToSSBO"] = copySSBO;
+    std::shared_ptr<Shader> copyToSSBOShader = std::make_shared<Shader>();
+    copyToSSBOShader->setHandle(shaderProgram);
+    copyToSSBOShader->compile(GL_COMPUTE_SHADER, "shaders/copyToSSBOShader.comp");
+    copyToSSBOShader->setShaderName("copyToSSBOShader");
+    copyToSSBOShader->link();
+    m_shaders["copyToSSBOShader"] = copyToSSBOShader;
+
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> trackShader = std::make_shared<Shader>();
+    trackShader->setHandle(shaderProgram);
+    trackShader->compile(GL_COMPUTE_SHADER, "shaders/trackShader.comp");
+    trackShader->setShaderName("trackShader");
+    trackShader->link();
+    m_shaders["trackShader"] = trackShader;
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> redTrackShader = std::make_shared<Shader>();
+    redTrackShader->setHandle(shaderProgram);
+    redTrackShader->compile(GL_COMPUTE_SHADER, "shaders/redTrackShader.comp");
+    redTrackShader->setShaderName("redTrackShader");
+    redTrackShader->link();
+    m_shaders["redTrackShader"] = redTrackShader;
+
+
+
 
 
 }
