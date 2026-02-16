@@ -117,11 +117,13 @@ add_library(${PROJECT_NAME} SHARED
         src/Sim3Solver.cc
         src/Initializer.cc
         include/ImageHandler.h
+        include/GlideUtils.h
         src/ImageHandler.cc
-        include/Logger.h
         include/GPUEngine.h
         src/GPUEngine.cpp
         ${PROJECT_SOURCE_DIR}/Thirdparty/glad/src/glad.c
+        include/GlideUtils.h
+        src/GlideUtils.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

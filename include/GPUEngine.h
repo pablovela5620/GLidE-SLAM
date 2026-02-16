@@ -57,7 +57,7 @@
 #include "System.h"
 #include "GPUEngineSettings.h"
 #include "Map.h"
-#include "Logger.h"
+#include "GlideUtils.h"
 
 namespace ORB_SLAM2
 {

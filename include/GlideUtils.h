@@ -1,16 +1,27 @@
 //
-// Created by caps on 1/10/26.
+// Created by caps on 2/16/26.
 //
 
-#ifndef GLIDE_SLAM_LOGGER
-#define GLIDE_SLAM_LOGGER
-
+#ifndef GLIDE_SLAM_GLIDEUTILS_H
+#define GLIDE_SLAM_GLIDEUTILS_H
+//
+// Created by caps on 1/10/26.
+//
 
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <mutex>
 
+//OpenCV
+#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 
+//maths library
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include "GPUEngineSettings.h"
 
 
 #define BLACK_TEXT   "\033[30m"
@@ -136,5 +147,10 @@ private:
     }
 };
 
-std::mutex Logger::logMutex;
-#endif //GLIDE_SLAM_LOGGER
+namespace GLideUtils
+{
+    glm::vec3 readInVector(cv::FileStorage& fs, const std::string& parameter);
+    glm::vec4 readInVector(cv::FileStorage& fs, const std::string& parameter, float defaultW);
+    bool ReadConfigFile(const std::string& path, GPUEngineSettings* GPUEngineSettings);
+}
+#endif //GLIDE_SLAM_GLIDEUTILS_H
