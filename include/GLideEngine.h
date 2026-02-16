@@ -917,9 +917,9 @@ class GPUCompute
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
     bool buildPyramid( cv::Mat& image);
     bool preCompute(const std::vector<glm::vec4>& mapPoints, const cv::Mat& pose);
-    bool track(cv::Mat& pose, float& outChi2, int& outN);
+    bool track(uint32_t frameID, cv::Mat& pose, float& outChi2, int& outN);
     cv::Mat readbackTexture(GLuint texHandle, int w, int h);
-    bool getTrackResult(cv::Mat& pose, float& chi2, int& nMeasurements);
+    bool getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& nMeasurements);
     bool shutDown();
 
 private:
@@ -961,6 +961,7 @@ private:
     GLideSettings* m_GPUEngineSettings{nullptr};
 
     struct TrackResult {
+        uint32_t frameID{0};
         cv::Mat pose;
         float chi2{0.0f};
         int N{0};
@@ -1146,9 +1147,9 @@ public:
     void setPause() {m_pauseSimulation.store(true);}
     void setScaleFactor(const float scale) { m_scaleFactor = scale; }
 
-    void updateNewFrame(const cv::Mat& image, const cv::Mat& pose);
+    void updateNewFrame(uint32_t frameID, const cv::Mat& image, const cv::Mat& pose);
     void updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose);
-    bool getTrackResult(cv::Mat& pose, float& chi2, int& N);
+    bool getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& N);
 private:
     void updateDirectTracking();
     void initializeWindows();
@@ -1225,7 +1226,8 @@ private:
     //camera frames
     FrameGizmo* m_currentKeyFrameGfx{nullptr};
     std::map<uint32_t, FrameGizmo*> m_keyFramesGfx;
-    std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfx;
+    std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfxCPU;
+    std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfxGPU;
     std::map<uint32_t, FrameGizmo*> m_tweenFramesGfx;
 
     //point clouds
@@ -1277,6 +1279,7 @@ private:
     bool m_isInitialized{false};
     std::mutex m_directTrackingMutex;
     cv::Mat m_sourceImage;
+    uint32_t m_sourceFrameID{0};
     bool m_directTrackDataAvailable{false};
 
     //in GLSL SSBO (std430) alignment uses 16-byte vec4

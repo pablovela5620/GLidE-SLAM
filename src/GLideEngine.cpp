@@ -504,6 +504,8 @@ bool GPUCompute::initializePreCompute()
 
 bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
 {
+    auto preComputeStartTime = std::chrono::high_resolution_clock::now();
+
     if (m_ssboMapPoints == 0) return false;
     if (mapPoints.empty() || mapPoints.size() > m_maxPoints) return false;
     if (m_nLevels == 0) return false;
@@ -600,7 +602,11 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     glBindTexture(GL_TEXTURE_2D, 0);
 
     if (glGetError() != GL_NO_ERROR) return false;
+    glFinish();
 
+    auto preComputeEndTime = std::chrono::high_resolution_clock::now();
+    float trackMs = std::chrono::duration<float, std::milli>(preComputeEndTime - preComputeStartTime).count();
+    Logger::LogInfoIII("GPU preCompute(): "   + std::to_string(trackMs) + " ms");
     return true;
 }
 
@@ -687,17 +693,28 @@ bool GPUCompute::initializeTrack()
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
+bool GPUCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &outN)
 {
+    //time track:
+    auto trackStart = std::chrono::high_resolution_clock::now();
+
+    auto logTime = [&](const std::string& status) {
+        glFinish();
+        auto trackEnd = std::chrono::high_resolution_clock::now();
+        float trackMs = std::chrono::duration<float, std::milli>(trackEnd - trackStart).count();
+        Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) + " ms");
+    };
     if (pose.empty() || pose.type() != CV_32FC1 || m_nLevels <= 0 || m_nPoints == 0 || m_nPoints > m_maxPoints)
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
+        m_gpuTrackResult.frameID = frameID;
         m_gpuTrackResult.pose = cv::Mat();
         m_gpuTrackResult.chi2 = 0.0f;
         m_gpuTrackResult.N = 0;
         m_gpuTrackResult.success = false;
         m_gpuTrackResult.ready = true;
         m_gpuTrackResult.cv.notify_one();
+        logTime("EARLY_FAIL");
         return false;
     }
 
@@ -705,6 +722,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
     {
         {
             std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
+            m_gpuTrackResult.frameID = frameID;
             m_gpuTrackResult.pose = cv::Mat();
             m_gpuTrackResult.chi2 = 0.0f;
             m_gpuTrackResult.N = 0;
@@ -712,6 +730,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
             m_gpuTrackResult.ready = true;
         }
         m_gpuTrackResult.cv.notify_one();
+        logTime("FAIL");
     };
 
     cv::Mat Tcw = pose.clone();
@@ -983,6 +1002,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
 
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
+        m_gpuTrackResult.frameID = frameID;
         m_gpuTrackResult.pose = Tcw.clone();
         m_gpuTrackResult.chi2 = finalChi2Mean;
         m_gpuTrackResult.N = outN;
@@ -991,6 +1011,7 @@ bool GPUCompute::track(cv::Mat& pose, float &outChi2, int &outN)
     }
     m_gpuTrackResult.cv.notify_one();
 
+    logTime(anyLevelOk ? "SUCCESS" : "FAIL");
     return anyLevelOk;
 }
 
@@ -1217,10 +1238,21 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
     return result;
 }
 
-bool GPUCompute::getTrackResult(cv::Mat& pose, float& chi2, int& N)
+bool GPUCompute::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& N)
 {
     std::unique_lock<std::mutex> lock(m_gpuTrackResult.mutex);
-    if (!m_gpuTrackResult.ready) return false;
+    if (!m_gpuTrackResult.ready)
+    {
+        Logger::LogWarning("GPUCompute: track result not ready! dispatched id="
+            + std::to_string(m_gpuTrackResult.frameID) + " check result id=" + std::to_string(frameID));
+        return false;
+    }
+    if (m_gpuTrackResult.frameID != frameID)
+    {
+        Logger::LogWarning("GPUCompute: Mismatch in frame number! dispatched id="
+            + std::to_string(m_gpuTrackResult.frameID) + " check result id=" + std::to_string(frameID));
+        return false;
+    }
 
 
     pose = m_gpuTrackResult.pose.clone();
@@ -1233,10 +1265,10 @@ bool GPUCompute::getTrackResult(cv::Mat& pose, float& chi2, int& N)
     return success;
 }
 
-bool GLideEngine::getTrackResult(cv::Mat& pose, float& chi2, int& N)
+bool GLideEngine::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& N)
 {
     if (!m_gpuCompute) return false;
-    return m_gpuCompute->getTrackResult(pose, chi2, N);
+    return m_gpuCompute->getTrackResult(frameID, pose, chi2, N);
 }
 
 bool GLideEngine::initialize()
@@ -1324,6 +1356,11 @@ void GLideEngine::run()
             m_stop.store(false);
         }
     }
+
+
+    auto loopStart = std::chrono::high_resolution_clock::now();
+    int loopCount = 0;
+
     while(!m_stop.load())
     {
         m_newTime = static_cast<float>(SDL_GetTicks())/1000.0f;
@@ -1332,19 +1369,19 @@ void GLideEngine::run()
         m_activeCamera->update(dt);
 
         //avoid CPU-GPU transfer every frame
-        uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
-        if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
-        {
-            ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
-            updateMapPoints();
-        }
-
-        uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
-        if (ma_LastFramesUpdateNumber != framesUpdateNumber)
-        {
-            ma_LastFramesUpdateNumber = framesUpdateNumber;
-            updateFrames3D();
-        }
+        // uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
+        // if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
+        // {
+        //     ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
+        //     updateMapPoints();
+        // }
+        //
+        // uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
+        // if (ma_LastFramesUpdateNumber != framesUpdateNumber)
+        // {
+        //     ma_LastFramesUpdateNumber = framesUpdateNumber;
+        //     updateFrames3D();
+        // }
         //
         // if(checkUpdateFramesFlag())
         // {
@@ -1353,11 +1390,10 @@ void GLideEngine::run()
 
         updateDirectTracking();
 
-        render();
+       // render();
 
         //get framerate (this is from viewer only!)
         float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
-
         //TODO: TEST WITH SDL_DELAY OR NOT, CURRENTLY REMOVED!
         //SDL_Delay(33);
     }
@@ -1365,6 +1401,7 @@ void GLideEngine::run()
 
 void GLideEngine::updateDirectTracking()
 {
+    uint32_t frameID = 0;
     cv::Mat img, pose;
     std::vector<glm::vec4> pts;
     bool doPrecompute = false;
@@ -1385,7 +1422,7 @@ void GLideEngine::updateDirectTracking()
 
             img = m_sourceImage; //img points to specific address
             pose = m_initialPose;
-
+            frameID = m_sourceFrameID;
             //decide to run precompute on Ref frame or direct tracking in new frame
             if (m_runPrecompute)
             {
@@ -1417,11 +1454,11 @@ void GLideEngine::updateDirectTracking()
     else if (doTrack)
     {
         Logger::LogInfoI("GPUEngine: Calling track.");
-        m_gpuCompute->track(pose,outChi2,outN);
+        m_gpuCompute->track(frameID, pose,outChi2,outN);
     }
 }
 
-void GLideEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
+void GLideEngine::updateNewFrame(uint32_t frameID, const cv::Mat &image, const cv::Mat &pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
@@ -1435,6 +1472,7 @@ void GLideEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
         if (m_runPrecompute)
             return;
 
+        m_sourceFrameID = frameID;
         m_sourceImage = image.clone();
         m_initialPose = pose.clone();
         m_directTrackDataAvailable = true;
@@ -1576,7 +1614,7 @@ void GLideEngine::renderMap3D()
         it->second->render();
     }
 
-    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfx.begin(); it != m_tweenFramesDirectGfx.end()
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfxCPU.begin(); it != m_tweenFramesDirectGfxCPU.end()
          ; it++)
     {
         m_mMatrix = it->second->getPose();
@@ -1585,6 +1623,18 @@ void GLideEngine::renderMap3D()
         basicShader->setUniform("mvpMatrix", m_mvpMatrix);
         it->second->render();
     }
+
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfxGPU.begin(); it != m_tweenFramesDirectGfxGPU.end()
+         ; it++)
+    {
+        m_mMatrix = it->second->getPose();
+        setMatrices();
+        basicShader->setUniform("vRGB", glm::vec3(0.0,0.0,0.0));
+        basicShader->setUniform("mvpMatrix", m_mvpMatrix);
+        it->second->render();
+    }
+
+
 
     for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesGfx.begin(); it != m_tweenFramesGfx.end()
          ; it++)
@@ -1823,14 +1873,15 @@ void GLideEngine::updateTweenIndirectFrames()
 
 void GLideEngine::updateTweenDirectFrames()
 {
-    const std::vector<ORB_SLAM2::FrameDirect>& frames = m_map->GetDirectTweenFrames();
+    const std::vector<ORB_SLAM2::FrameDirect>& framesCPU = m_map->GetDirectTweenFramesCPU();
+    const std::vector<ORB_SLAM2::FrameDirect>& framesGPU = m_map->GetDirectTweenFramesGPU();
     glm::mat4 F(1.0f);
     F[1][1] = -1.0f;
     //F[2][2] = -1.0f;
 
-    for (uint32_t n = 0; n < frames.size(); n++)
+    for (uint32_t n = 0; n < framesCPU.size(); n++)
     {
-        cv::Mat framePose = frames[n].mTwc;
+        cv::Mat framePose = framesCPU[n].mTwc;
 
         glm::mat4 cvPose(1.0f);
         for (int i = 0; i < 4; i++)
@@ -1845,12 +1896,12 @@ void GLideEngine::updateTweenDirectFrames()
 
 
 
-        uint32_t id = frames[n].mnId;
+        uint32_t id = framesCPU[n].mnId;
 
         //if frame exists already, update pose
-        if (m_tweenFramesDirectGfx.count(id))
+        if (m_tweenFramesDirectGfxCPU.count(id))
         {
-            m_tweenFramesDirectGfx[id]->setPose(pose);
+            m_tweenFramesDirectGfxCPU[id]->setPose(pose);
         }
         //otherwise create new
         else
@@ -1859,11 +1910,50 @@ void GLideEngine::updateTweenDirectFrames()
             tempFrame->initialize();
 
             //if first frame (empty), there should be no parent
-            if (!m_tweenFramesDirectGfx.empty())
+            if (!m_tweenFramesDirectGfxCPU.empty())
             {
-                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfx.end())->second);
+                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfxCPU.end())->second);
             }
-            m_tweenFramesDirectGfx[frames[n].mnId] = tempFrame;
+            m_tweenFramesDirectGfxCPU[framesCPU[n].mnId] = tempFrame;
+        }
+    }
+
+    for (uint32_t n = 0; n < framesGPU.size(); n++)
+    {
+        cv::Mat framePose = framesGPU[n].mTwc;
+
+        glm::mat4 cvPose(1.0f);
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                cvPose[j][i] = framePose.at<float>(i, j);
+
+        glm::mat4 pose = F * cvPose * F;
+        //scale
+        pose[3].x *= m_scaleFactor;
+        pose[3].y *= m_scaleFactor;
+        pose[3].z *= m_scaleFactor;
+
+
+
+        uint32_t id = framesGPU[n].mnId;
+
+        //if frame exists already, update pose
+        if (m_tweenFramesDirectGfxGPU.count(id))
+        {
+            m_tweenFramesDirectGfxGPU[id]->setPose(pose);
+        }
+        //otherwise create new
+        else
+        {
+            FrameGizmo* tempFrame = new FrameGizmo(0, pose, id);
+            tempFrame->initialize();
+
+            //if first frame (empty), there should be no parent
+            if (!m_tweenFramesDirectGfxGPU.empty())
+            {
+                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfxGPU.end())->second);
+            }
+            m_tweenFramesDirectGfxGPU[framesGPU[n].mnId] = tempFrame;
         }
     }
 }
@@ -2012,9 +2102,13 @@ void GLideEngine::shutdown()
         delete pair.second;
     m_keyFramesGfx.clear();
 
-    for (auto& pair : m_tweenFramesDirectGfx)
+    for (auto& pair : m_tweenFramesDirectGfxCPU)
         delete pair.second;
-    m_tweenFramesDirectGfx.clear();
+    m_tweenFramesDirectGfxCPU.clear();
+
+    for (auto& pair : m_tweenFramesDirectGfxGPU)
+        delete pair.second;
+    m_tweenFramesDirectGfxGPU.clear();
 
     for (auto& pair : m_tweenFramesGfx)
         delete pair.second;

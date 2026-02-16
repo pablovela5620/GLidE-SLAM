@@ -116,10 +116,16 @@ const std::vector<Frame>& Map::GetTweenFrames()
     return mspTweenFrames;
 }
 
-const std::vector<FrameDirect>& Map::GetDirectTweenFrames()
+const std::vector<FrameDirect>& Map::GetDirectTweenFramesCPU()
 {
     unique_lock<mutex> lock(mMutexMap);
     return mspTweenDirectFramesCPU;
+}
+
+const std::vector<FrameDirect>& Map::GetDirectTweenFramesGPU()
+{
+    unique_lock<mutex> lock(mMutexMap);
+    return mspTweenDirectFramesGPU;
 }
 
 vector<MapPoint*> Map::GetAllMapPoints()

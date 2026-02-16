@@ -156,6 +156,8 @@ protected:
     void updateDirectReference();
     bool NeedNewDirectRef();
     void compareDirectVsIndirect();
+    void LogCPUvsGPU(int frameId, const cv::Mat& poseCPU, const cv::Mat& poseGPU,
+                           float chi2CPU, float chi2GPU);
 
     // In case of performing only localization, this flag is true when there are no matches to
     // points in the map. Still tracking will continue if there are enough matches with temporal points.

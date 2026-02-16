@@ -59,7 +59,8 @@ public:
     std::vector<KeyFrame*> GetAllKeyFrames();
 
     const std::vector<Frame>& GetTweenFrames();
-    const std::vector<FrameDirect>& GetDirectTweenFrames();
+    const std::vector<FrameDirect>& GetDirectTweenFramesCPU();
+    const std::vector<FrameDirect>& GetDirectTweenFramesGPU();
 
     std::vector<MapPoint*> GetAllMapPoints();
     std::vector<MapPoint*> GetReferenceMapPoints();
