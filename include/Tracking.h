@@ -94,7 +94,9 @@ public:
     Frame mCurrentFrame;
     cv::Mat mImGray;
 
-    FrameDirect mCurrentDirectFrame;
+    //TODO: Rename/Remove CPU/GPU, only for testing
+    FrameDirect mCurrentDirectFrameCPU;
+    FrameDirect mCurrentDirectFrameGPU;
 
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;
@@ -239,13 +241,15 @@ protected:
     cv::Mat mVelocityDirect;
 
     bool mbUseDirectTracking{false};
-    bool mbDirectTrackOk{false};
+    bool mbDirectTrackCPUOk{false};
+    bool mbDirectTrackGPUOk{false};
     bool mbDirectTrackRecovery{false};
     std::vector<DirectTrackCache> m_directTrackCache;
     unsigned long int mpPrevDirectRefID{0};
     unsigned long int mnLastIndirectFrameId{0};
     int mMaxFramesDirect{10};
-    float mLastDirectChi2{0.0f};
+    float mLastDirectChi2CPU{0.0f};
+    float mLastDirectChi2GPU{0.0f};
     float mFx{0.0f};
     float mFy{0.0f};
     float mCx{0.0f};

@@ -1,7 +1,7 @@
 //
 // Created by caps on 2/16/26.
 //
-#include "GlideUtils.h"
+#include "GLideUtils.h"
 
 std::mutex Logger::logMutex;
 
@@ -30,7 +30,7 @@ glm::vec4 GLideUtils::readInVector(cv::FileStorage& fs, const std::string& param
     float w = (v.size() >= 4) ? v[3] : defaultW;
     return glm::vec4(v[0], v[1], v[2], w);
 }
-bool GLideUtils::ReadConfigFile(const std::string &path, GPUEngineSettings *GPUEngineSettings)
+bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GPUEngineSettings)
 {
     cv::FileStorage fs(path, cv::FileStorage::READ);
     if (!fs.isOpened())

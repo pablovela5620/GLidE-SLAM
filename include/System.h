@@ -35,7 +35,7 @@
 #include "KeyFrameDatabase.h"
 #include "ORBVocabulary.h"
 #include "GLideEngine.h"
-#include "GPUEngineSettings.h"
+#include "GLideSettings.h"
 
 class GLideEngine;
 
@@ -181,7 +181,7 @@ private:
 
 
     //added viewer for viewer settings
-    GPUEngineSettings* mpGPUEngineSettings;
+    GLideSettings* mpGPUEngineSettings;
 };
 
 }// namespace ORB_SLAM

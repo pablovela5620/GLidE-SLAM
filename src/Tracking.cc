@@ -35,7 +35,7 @@
 #include"PnPsolver.h"
 
 #include "ImageHandler.h"
-#include "GlideUtils.h"
+#include "GLideUtils.h"
 #include<iostream>
 
 #include<mutex>
@@ -279,7 +279,7 @@ namespace ORB_SLAM2
         {
             mCurrentFrame = Frame(mImGray, timestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
                                   mThDepth);
-            mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+            mCurrentDirectFrameCPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
         }
 
         Logger::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
@@ -346,28 +346,34 @@ namespace ORB_SLAM2
 
 
                     //Perform direct tracking (CPU)
-                    bool bDirectTrackRecovery = mCurrentDirectFrame.mnId < mpPrevDirectRefID + 3;
-                    // mbDirectTrackOk = trackDirectIC(&mCurrentDirectFrame, &mLastDirectFrame, m_directTrackCache,
-                    //                                     false, mLastDirectChi2);
+                    bool bDirectTrackRecovery = mCurrentDirectFrameCPU.mnId < mpPrevDirectRefID + 3;
+                    mbDirectTrackCPUOk = trackDirectIC(&mCurrentDirectFrameCPU, &mLastDirectFrame, m_directTrackCache,
+                                                         false, mLastDirectChi2CPU);
 
-                    cv::Mat gpuResultPose;
+                    cv::Mat resultPoseGPU;
                     int gpuN;
 
                     //By this time, the pose should be ready!
-                    mbDirectTrackOk = mpGPUEngine->getTrackResult(gpuResultPose, mLastDirectChi2, gpuN);
+                    mbDirectTrackGPUOk = mpGPUEngine->getTrackResult(resultPoseGPU, mLastDirectChi2GPU, gpuN);
 
-                    if (mbDirectTrackOk)
-                        mCurrentDirectFrame.SetPose(gpuResultPose);
+                    if (mbDirectTrackCPUOk)
+                    {
+                        //compare poses and Chi2
+                        cv::Mat resultPoseCPU = mCurrentDirectFrameCPU.mTcw.clone();
 
-                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
+                        mCurrentDirectFrameGPU.SetPose(resultPoseGPU);
+                    }
+
+                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2CPU);
                     mbUseDirectTracking = false;
-                    if (mbDirectTrackOk && !bSwitchToIndirect)
+                    if (mbDirectTrackCPUOk && !bSwitchToIndirect)
                     {
                         // Tween frame: use direct pose, skip TrackLocalMap
-                        mCurrentFrame.SetPose(mCurrentDirectFrame.mTcw);
+                        mCurrentFrame.SetPose(mCurrentDirectFrameCPU.mTcw);
                         mbUseDirectTracking = true;
                         bOK = true;
-                        mpMap->AddDirectTweenFrame(mCurrentDirectFrame);
+                        mpMap->AddDirectTweenFrameCPU(mCurrentDirectFrameCPU);
+                        mpMap->AddDirectTweenFrameGPU(mCurrentDirectFrameGPU);
                         mpMap->NotifyFramesUpdated();
                     }
                     else
@@ -467,8 +473,8 @@ namespace ORB_SLAM2
                     if (mbUseDirectTracking)
                     {
                         std::vector<double> directTweenFrameData;
-                        FetchPosandRot(mCurrentDirectFrame.mTimeStamp, mCurrentDirectFrame.mRwc,
-                                       mCurrentDirectFrame.mtwc, directTweenFrameData);
+                        FetchPosandRot(mCurrentDirectFrameCPU.mTimeStamp, mCurrentDirectFrameCPU.mRwc,
+                                       mCurrentDirectFrameCPU.mtwc, directTweenFrameData);
                         mDTweenFrameData = directTweenFrameData;
                     }
                     else
@@ -499,14 +505,14 @@ namespace ORB_SLAM2
             //mpFrameDrawer->Update(this);
 
 
-            if (mbDirectTrackOk && mbUseDirectTracking)
+            if (mbDirectTrackCPUOk && mbUseDirectTracking)
             {
                 if (!mLastDirectFrame.mTcw.empty())
                 {
                     cv::Mat LastTwc = cv::Mat::eye(4, 4,CV_32F);
                     mLastDirectFrame.mRwc.copyTo(LastTwc.rowRange(0, 3).colRange(0, 3));
                     mLastDirectFrame.mtwc.copyTo(LastTwc.rowRange(0, 3).col(3));
-                    mVelocityDirect = mCurrentDirectFrame.mTcw * LastTwc;
+                    mVelocityDirect = mCurrentDirectFrameCPU.mTcw * LastTwc;
                 } else
                     mVelocityDirect = cv::Mat();
             } else
@@ -594,8 +600,8 @@ namespace ORB_SLAM2
                 mLastFrame = Frame(mCurrentFrame);
             }
 
-            if (mbDirectTrackOk)
-                mLastDirectFrame = FrameDirect(mCurrentDirectFrame);
+            if (mbDirectTrackCPUOk)
+                mLastDirectFrame = FrameDirect(mCurrentDirectFrameCPU);
         }
 
         // Store frame pose information to retrieve the complete camera trajectory afterwards.
@@ -1232,12 +1238,12 @@ namespace ORB_SLAM2
         const int nKFs = mpMap->KeyFramesInMap();
 
         // Do not insert keyframes if not enough frames have passed
-        if (mCurrentDirectFrame.mnId < mpPrevDirectRefID + mMaxFramesDirect && nKFs > mMaxFramesDirect)
+        if (mCurrentDirectFrameCPU.mnId < mpPrevDirectRefID + mMaxFramesDirect && nKFs > mMaxFramesDirect)
             return false;
 
         // --- Temporal conditions (from original) ---
-        const bool c1a = mCurrentDirectFrame.mnId >= mpPrevDirectRefID + mMaxFramesDirect;
-        const bool c1b = (mCurrentDirectFrame.mnId >= mpPrevDirectRefID + mMinFrames &&
+        const bool c1a = mCurrentDirectFrameCPU.mnId >= mpPrevDirectRefID + mMaxFramesDirect;
+        const bool c1b = (mCurrentDirectFrameCPU.mnId >= mpPrevDirectRefID + mMinFrames &&
                           !mpLocalMapper->KeyframesInQueue());
 
         // --- Chi2-based quality conditions (replaces map point stats) ---
@@ -1270,7 +1276,7 @@ namespace ORB_SLAM2
 
         cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
         cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
-        const cv::Mat &I = mCurrentDirectFrame.m_pyrImg[0];
+        const cv::Mat &I = mCurrentDirectFrameCPU.m_pyrImg[0];
 
         int border = PATCH_CENTER + 2;
 
@@ -1374,7 +1380,9 @@ namespace ORB_SLAM2
         mLastDirectFrame = FrameDirect(mCurrentFrame);
         mLastDirectFrame.m_pyrImg = mCurrentFrame.m_pyrImg;
         mCurrentFrame.computeImagePyramids(mImGray);
-        //trackPrecompute(mCurrentFrame, m_directTrackCache);
+
+        //CPU
+        trackPrecompute(mCurrentFrame, m_directTrackCache);
 
         //GPU preCompute
         std::vector<glm::vec4> mapPointsGLM;
@@ -1694,7 +1702,7 @@ namespace ORB_SLAM2
 
         //Initialize direct tracking
 
-        mCurrentDirectFrame = FrameDirect(mCurrentFrame);
+        mCurrentDirectFrameCPU = FrameDirect(mCurrentFrame);
         updateDirectReference();
 
 

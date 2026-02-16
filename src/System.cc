@@ -100,7 +100,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     if(bUseViewer)
     {
         //Read viewer settings files:
-        mpGPUEngineSettings = new GPUEngineSettings();
+        mpGPUEngineSettings = new GLideSettings();
         GLideUtils::ReadConfigFile("Examples/Monocular/GPUConfig.yaml", mpGPUEngineSettings);
         mpGPUEngine = new GLideEngine(this, mpGPUEngineSettings);
         if (mpMap)

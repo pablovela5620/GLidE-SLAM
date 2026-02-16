@@ -44,7 +44,9 @@ public:
     void AddKeyFrame(KeyFrame* pKF);
 
     void AddTweenFrame(Frame& pKF);
-    void AddDirectTweenFrame(FrameDirect& pKF);
+    //TODO: Rename/Remove CPU/GPU, only for testing
+    void AddDirectTweenFrameCPU(FrameDirect& pKF);
+    void AddDirectTweenFrameGPU(FrameDirect& pKF);
     void ClearTweenFrames();
 
     void AddMapPoint(MapPoint* pMP);
@@ -86,7 +88,10 @@ protected:
     std::set<KeyFrame*> mspKeyFrames;
 
     std::vector<Frame> mspTweenFrames;
-    std::vector<FrameDirect> mspTweenDirectFrames;
+
+    //TODO: Rename/Remove CPU/GPU, only for testing
+    std::vector<FrameDirect> mspTweenDirectFramesCPU;
+    std::vector<FrameDirect> mspTweenDirectFramesGPU;
 
     std::vector<MapPoint*> mvpReferenceMapPoints;
 

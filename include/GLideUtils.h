@@ -21,7 +21,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "GPUEngineSettings.h"
+#include "GLideSettings.h"
 
 
 #define BLACK_TEXT   "\033[30m"
@@ -151,6 +151,6 @@ namespace GLideUtils
 {
     glm::vec3 readInVector(cv::FileStorage& fs, const std::string& parameter);
     glm::vec4 readInVector(cv::FileStorage& fs, const std::string& parameter, float defaultW);
-    bool ReadConfigFile(const std::string& path, GPUEngineSettings* GPUEngineSettings);
+    bool ReadConfigFile(const std::string& path, GLideSettings* GPUEngineSettings);
 }
 #endif //GLIDE_SLAM_GLIDEUTILS_H

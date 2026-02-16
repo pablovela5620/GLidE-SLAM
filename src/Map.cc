@@ -43,17 +43,23 @@ void Map::AddTweenFrame(Frame& pKF)
     mspTweenFrames.push_back(pKF);
 }
 
-void Map::AddDirectTweenFrame(FrameDirect& pKF)
+    //TODO: Rename/Remove CPU/GPU, only for testing
+void Map::AddDirectTweenFrameCPU(FrameDirect& pKF)
 {
     unique_lock<mutex> lock(mMutexMap);
-    mspTweenDirectFrames.push_back(pKF);
+    mspTweenDirectFramesCPU.push_back(pKF);
+}
+void Map::AddDirectTweenFrameGPU(FrameDirect& pKF)
+{
+    unique_lock<mutex> lock(mMutexMap);
+    mspTweenDirectFramesGPU.push_back(pKF);
 }
 
 void Map::ClearTweenFrames()
 {
     unique_lock<mutex> lock(mMutexMap);
     mspTweenFrames.clear();
-    mspTweenDirectFrames.clear();
+    mspTweenDirectFramesCPU.clear();
 }
 
 void Map::AddMapPoint(MapPoint *pMP)
@@ -113,7 +119,7 @@ const std::vector<Frame>& Map::GetTweenFrames()
 const std::vector<FrameDirect>& Map::GetDirectTweenFrames()
 {
     unique_lock<mutex> lock(mMutexMap);
-    return mspTweenDirectFrames;
+    return mspTweenDirectFramesCPU;
 }
 
 vector<MapPoint*> Map::GetAllMapPoints()

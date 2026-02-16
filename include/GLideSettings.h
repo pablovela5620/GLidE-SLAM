@@ -6,9 +6,9 @@
 #include <string>
 #include <glm/glm.hpp>
 
-struct GPUEngineSettings
+struct GLideSettings
 {
-    GPUEngineSettings& operator=(const GPUEngineSettings& other)
+    GLideSettings& operator=(const GLideSettings& other)
 	{
 		if (this != &other)
 		{

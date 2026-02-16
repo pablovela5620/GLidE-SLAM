@@ -1867,6 +1867,7 @@ void GLideEngine::updateTweenDirectFrames()
         }
     }
 }
+
 using namespace UIEvents;
 void GLideEngine::PollEvents()
 {

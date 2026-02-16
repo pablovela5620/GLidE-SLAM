@@ -73,9 +73,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "System.h"
-#include "GPUEngineSettings.h"
+#include "GLideSettings.h"
 #include "Map.h"
-#include "GlideUtils.h"
+#include "GLideUtils.h"
 
 namespace ORB_SLAM2
 {
@@ -912,7 +912,7 @@ class GPUCompute
     public:
 
     GPUCompute(){};
-    GPUCompute(GPUEngineSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
+    GPUCompute(GLideSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
     bool initialize();
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
     bool buildPyramid( cv::Mat& image);
@@ -958,7 +958,7 @@ private:
     float m_cx{0.0f};
     float m_cy{0.0f};
 
-    GPUEngineSettings* m_GPUEngineSettings{nullptr};
+    GLideSettings* m_GPUEngineSettings{nullptr};
 
     struct TrackResult {
         cv::Mat pose;
@@ -1105,7 +1105,7 @@ class GLideEngine
 {
 public:
     //TODO: separeate methods into private/public
-    GLideEngine(ORB_SLAM2::System* system, GPUEngineSettings* slamSettings) : m_system(system), m_GPUEngineSettings(slamSettings){};
+    GLideEngine(ORB_SLAM2::System* system, GLideSettings* slamSettings) : m_system(system), m_GPUEngineSettings(slamSettings){};
 
     bool initialize();
     void run();
@@ -1249,7 +1249,7 @@ private:
     glm::mat4 m_pMatrix{glm::mat4(1.0f)};
     glm::mat4 m_mvpMatrix{glm::mat4(1.0f)};
 
-    GPUEngineSettings *m_GPUEngineSettings{NULL};
+    GLideSettings *m_GPUEngineSettings{NULL};
 
     std::mutex mMutexUpdate;
     std::condition_variable m_cv;
