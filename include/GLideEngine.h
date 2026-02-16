@@ -1025,6 +1025,7 @@ private:
     //track shader handles
     GLuint m_trackShader{0};
     GLuint m_red1TrackShader{0};
+    GLuint m_solveTrackShader{0};
 
     //track uniform locations
     GLint m_uEnableAlignTrack{-1};

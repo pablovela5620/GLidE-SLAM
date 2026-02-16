@@ -116,6 +116,11 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
         { Logger::LogError("Failed to load: redTrackShader"); return false; }
     GLuint redTrackShader = it->second->getHandle();
 
+    it = shaders.find("solveTrackShader");
+    if (it == shaders.end() || !it->second)
+        { Logger::LogError("Failed to load: solveTrackShader"); return false; }
+    GLuint solveTrackShader = it->second->getHandle();
+
 
     // make sure shader handles loaded
     if (convert8To32FShader == 0 ||
@@ -126,7 +131,8 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
         redPreComputeH1Shader == 0 ||
         redPreComputeH2Shader == 0 ||
         trackShader == 0 ||
-        redTrackShader == 0)
+        redTrackShader == 0 ||
+        solveTrackShader)
     {
         return false;
     }
@@ -141,6 +147,7 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
     m_redH2PreComputeShader   = redPreComputeH2Shader;
     m_trackShader             = trackShader;
     m_red1TrackShader         = redTrackShader;
+    m_solveTrackShader        = solveTrackShader;
 
     //set shader uniforms (pyramid shader)
     m_uBlurDirPyramid = glGetUniformLocation(m_gauss32FShader, "uDirection");
@@ -2370,6 +2377,14 @@ void GLideEngine::initializeShaders()
     redTrackShader->setShaderName("redTrackShader");
     redTrackShader->link();
     m_shaders["redTrackShader"] = redTrackShader;
+
+    shaderProgram = glCreateProgram();
+    std::shared_ptr<Shader> solveTrackShader = std::make_shared<Shader>();
+    solveTrackShader->setHandle(shaderProgram);
+    solveTrackShader->compile(GL_COMPUTE_SHADER, "shaders/solveTrackShader.comp");
+    solveTrackShader->setShaderName("solveTrackShader");
+    solveTrackShader->link();
+    m_shaders["solveTrackShader"] = solveTrackShader;
 
 
 
