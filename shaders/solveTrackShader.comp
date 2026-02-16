@@ -1,0 +1,274 @@
+#version 310 es
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+uniform int   uPatchSize;
+uniform int   uIteration;
+uniform int   uMinMeasurements;   // e.g. 48
+uniform float uEpsNorm;           // e.g. 1e-4
+uniform int   uIsLastIter;        // 0/1 (CPU sets: iteration==maxIters-1)
+
+// Reduced per-iteration outputs (single element)
+layout(std430, binding = 10) readonly buffer B0LevelBuffer    { vec4  B0Level;   };
+layout(std430, binding = 11) readonly buffer B1LevelBuffer    { vec4  B1Level;   };
+layout(std430, binding = 12) readonly buffer Chi2LevelBuffer  { float Chi2Level; };
+layout(std430, binding = 13) readonly buffer ValidLevelBuffer { uint  ValidLevel; };
+
+// Precomputed Hessian for this level (packed 21 floats)
+layout(std430, binding = 14) readonly buffer HLevelBuffer { float H[21]; } inH;
+// Current pose lives on GPU
+layout(std430, binding = 18) buffer PoseBuffer { mat4 Tcw; } poseBuf;
+
+// Per-level state (one instance reused per level)
+layout(std430, binding = 15) buffer TrackStateBuffer
+{
+    mat4  bestPose;        // pose that produced bestChi
+    float bestChi;         // min chiMean so far
+    float levelStartChi;   // chiMean at iter 0
+    float lastChi;         // last chiMean
+    float lastDeltaNorm;   // last |delta|
+    uint  divergeCount;    // consecutive non-improving
+    uint  stop;            // 1 => stop updating pose
+    uint  hadValid;        // 1 => at least one valid iter happened
+    uint  bestValidPts;    // validPts at bestChi
+    uint  failed;          // 1 => failure (singular/NaN/too few meas)
+    uint  _pad0;
+} st;
+
+float A6(int r, int c, float A[36]) { return A[r*6 + c]; }
+void  SA6(int r, int c, float v, inout float A[36]) { A[r*6 + c] = v; }
+
+void unpackH(out float A[36])
+{
+    // Upper-triangle packed row-major: (0,0..5),(1,1..5),...,(5,5)
+    int k = 0;
+    for (int i = 0; i < 6; ++i)
+    {
+        for (int j = i; j < 6; ++j)
+        {
+            float v = inH.H[k++];
+            SA6(i,j,v,A);
+            SA6(j,i,v,A);
+        }
+    }
+}
+
+bool choleskySolve6(in float A[36], in float b[6], out float x[6])
+{
+    // A = L * L^T
+    float L[36];
+    for (int i=0;i<36;++i) L[i]=0.0;
+
+    const float eps = 1e-10;
+
+    for (int i = 0; i < 6; ++i)
+    {
+        for (int j = 0; j <= i; ++j)
+        {
+            float sum = A6(i,j,A);
+            for (int k = 0; k < j; ++k)
+            sum -= L[i*6+k] * L[j*6+k];
+
+            if (i == j)
+            {
+                if (sum <= eps) return false;
+                L[i*6+i] = sqrt(sum);
+            }
+            else
+            {
+                float d = L[j*6+j];
+                if (d <= eps) return false;
+                L[i*6+j] = sum / d;
+            }
+        }
+    }
+
+    // forward: L y = b
+    float y[6];
+    for (int i = 0; i < 6; ++i)
+    {
+        float sum = b[i];
+        for (int k = 0; k < i; ++k) sum -= L[i*6+k] * y[k];
+        float d = L[i*6+i];
+        if (d <= eps) return false;
+        y[i] = sum / d;
+    }
+
+    // back: L^T x = y
+    for (int i = 5; i >= 0; --i)
+    {
+        float sum = y[i];
+        for (int k = i+1; k < 6; ++k) sum -= L[k*6+i] * x[k];
+        float d = L[i*6+i];
+        if (d <= eps) return false;
+        x[i] = sum / d;
+    }
+    return true;
+}
+
+mat3 skew(vec3 w)
+{
+    return mat3(
+    0.0, -w.z,  w.y,
+    w.z,  0.0, -w.x,
+    -w.y,  w.x,  0.0
+    );
+}
+
+mat4 se3exp(vec3 w, vec3 v)
+{
+    float th = length(w);
+    mat3 I = mat3(1.0);
+    mat3 W = skew(w);
+    mat3 W2 = W * W;
+
+    mat3 R = I;
+    mat3 V = I;
+
+    if (th > 1e-8)
+    {
+        float s_over_th   = sin(th) / th;
+        float one_mc_over = (1.0 - cos(th)) / (th*th);
+        float th_ms_over  = (th - sin(th)) / (th*th*th);
+
+        R = I + s_over_th * W + one_mc_over * W2;
+        V = I + one_mc_over * W + th_ms_over  * W2;
+    }
+    else
+    {
+        R = I + W;
+        V = I + 0.5 * W + (1.0/6.0) * W2;
+    }
+
+    vec3 t = V * v;
+
+    mat4 T = mat4(1.0);
+    T[0][0]=R[0][0]; T[1][0]=R[0][1]; T[2][0]=R[0][2];
+    T[0][1]=R[1][0]; T[1][1]=R[1][1]; T[2][1]=R[1][2];
+    T[0][2]=R[2][0]; T[1][2]=R[2][1]; T[2][2]=R[2][2];
+    T[3][0]=t.x;     T[3][1]=t.y;     T[3][2]=t.z;
+    return T;
+}
+
+bool finite1(float v) { return !(isnan(v) || isinf(v)); }
+
+void main()
+{
+    if (st.failed != 0u) return;
+
+    // If already stopped, just commit best on last iter (optional)
+    if (st.stop != 0u)
+    {
+        if (uIsLastIter != 0) poseBuf.Tcw = st.bestPose;
+        return;
+    }
+
+    uint validPts = ValidLevel;
+    int patchArea = uPatchSize * uPatchSize;
+    int nMeas = int(validPts) * patchArea;
+
+    if (nMeas < uMinMeasurements)
+    {
+        st.failed = 1u;
+        st.stop   = 1u;
+        return;
+    }
+
+    float chiMean = Chi2Level / float(nMeas);
+    if (!finite1(chiMean))
+    {
+        st.failed = 1u;
+        st.stop   = 1u;
+        return;
+    }
+
+    if (uIteration == 0) st.levelStartChi = chiMean;
+    st.lastChi = chiMean;
+
+    mat4 poseBefore = poseBuf.Tcw;
+
+    // best / diverge logic (same as your CPU)
+    if (chiMean < st.bestChi)
+    {
+        st.bestChi       = chiMean;
+        st.bestPose      = poseBefore;
+        st.bestValidPts  = validPts;
+        st.divergeCount  = 0u;
+    }
+    else
+    {
+        st.divergeCount++;
+        if (st.divergeCount >= 3u)
+        {
+            poseBuf.Tcw = st.bestPose; // rollback
+            st.stop     = 1u;
+            st.hadValid = 1u;
+            if (uIsLastIter != 0) poseBuf.Tcw = st.bestPose;
+            return;
+        }
+    }
+
+    // build b
+    float b[6];
+    b[0] = B0Level.x;
+    b[1] = B0Level.y;
+    b[2] = B0Level.z;
+    b[3] = B0Level.w;
+    b[4] = B1Level.x;
+    b[5] = B1Level.y;
+
+    // unpack H
+    float Hfull[36];
+    unpackH(Hfull);
+
+    // diag guard (like your CPU)
+    float minDiag = min(min(min(min(min(Hfull[0], Hfull[7]), Hfull[14]), Hfull[21]), Hfull[28]), Hfull[35]);
+    if (minDiag < 1e-6)
+    {
+        st.failed = 1u;
+        st.stop   = 1u;
+        return;
+    }
+
+    // solve
+    float delta[6];
+    bool ok = choleskySolve6(Hfull, b, delta);
+    if (!ok)
+    {
+        st.failed = 1u;
+        st.stop   = 1u;
+        return;
+    }
+
+    // finite check + norm
+    float dn = 0.0;
+    for (int i=0;i<6;++i)
+    {
+        if (!finite1(delta[i])) { st.failed=1u; st.stop=1u; return; }
+        dn += delta[i]*delta[i];
+    }
+    dn = sqrt(dn);
+    st.lastDeltaNorm = dn;
+
+    st.hadValid = 1u;
+
+    // Your ordering: xi = [delta(3..5), delta(0..2)]
+    vec3 w = vec3(delta[3], delta[4], delta[5]); // omega
+    vec3 v = vec3(delta[0], delta[1], delta[2]); // v
+
+    mat4 dT = se3exp(w, v);
+
+    // Match your current GPU code: Tcw = Tcw * se3exp(xi)
+    poseBuf.Tcw = poseBuf.Tcw * dT;
+
+    if (dn < uEpsNorm) st.stop = 1u;
+
+    // On last iter, force commit bestPose (matches CPU: Tcw=bestT at end of level)
+    if (uIsLastIter != 0)
+    {
+        poseBuf.Tcw = st.bestPose;
+        st.stop = 1u;
+    }
+}

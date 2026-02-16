@@ -12,7 +12,7 @@ layout(local_size_x = 64,local_size_y = 1,local_size_z = 1) in;
 
 
 //Uniforms (read-only constant for all invocations)
-uniform mat4        uPose;              //camera pose
+//uniform mat4        uPose;            //camera pose (change: needs to read/write, cannot be uniform)
 uniform vec4        uK;                 //intrinsics (pre-scaled for each level)
 uniform int         uPatchSize;         //size of patch
 uniform int         uLevel;             //current level being processed
@@ -46,7 +46,7 @@ layout(std430, binding = 8) writeonly buffer NewValidBuffer     {uint  Valid[]; 
 
 //read and write
 layout(std430, binding = 9) buffer AlignBuffer        {vec4  Align[]; } inOutAlign;
-
+layout(std430, binding =18) buffer PoseBuffer         {mat4  Tcw;} inOutPose;
 
 //helper functions
 //return bilinear interpolation (used for projection etc.)
@@ -205,6 +205,7 @@ void main()
         return;
     }
     //also check if RevValidBuffer?
+    //(previous levels might set to invalid)
     if(inValid.Valid[ptIndex] == 0u)
     {
         invalidatePoint(ptIndex);
@@ -213,7 +214,7 @@ void main()
 
     //project point to camera pose space
     vec4 ptPos = inMapPoints.pos[ptIndex];   //world pos
-    vec4 ptPosCam = uPose * ptPos;          //wrt to camera
+    vec4 ptPosCam = inOutPose.Tcw * ptPos;   //wrt to camera
     float X = ptPosCam.x;
     float Y = ptPosCam.y;
     float Z = ptPosCam.z;
@@ -341,7 +342,7 @@ void main()
 
 
 
-    //starting index of patch in buffer that stores all patches
+    //starting index of patch in buffer (stores all patches flat)
     uint IBase = ptIndex * uint(patchArea);
 
     vec4 b0 = vec4(0.0);

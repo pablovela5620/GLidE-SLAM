@@ -907,12 +907,12 @@ private:
     EGLSurface m_eglSurface;
 };
 
-class GPUCompute
+class GLideCompute
 {
     public:
 
-    GPUCompute(){};
-    GPUCompute(GLideSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
+    GLideCompute(){};
+    GLideCompute(GLideSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
     bool initialize();
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
     bool buildPyramid( cv::Mat& image);
@@ -988,7 +988,7 @@ private:
     GLuint m_gauss32FShader{0};
     GLuint m_resizeShader{0};
 
-    //pyramid shader uniform localtions
+    //pyramid shader uniform locations
     GLint m_uBlurDirPyramid{-1};
     GLint m_uScaleFactorPyramid{-1};
     GLint m_uInputTexPyramid{-1};
@@ -1044,6 +1044,14 @@ private:
 
     GLint m_uNpointsReduce1Track{-1};
 
+    GLint m_uPatchSizeSolveTrack{-1};
+    GLint m_MinMeasurementsSolveTrack{-1};
+    GLint m_EpsNorm{-1};
+    GLint m_uIterationSolveTrack{-1};
+
+
+    //track shader shader storage buffer objects
+    GLuint m_ssbo_Pose = 0;
     //cache/data that is stored per level
     struct TrackCache
     {
@@ -1074,9 +1082,12 @@ private:
     static const GLuint TRACK_OUT_B1             {6}; // trackCache[L].ssbo_B1 (vec4[])
     static const GLuint TRACK_OUT_CHI2           {7}; // trackCache[L].ssbo_Chi2 (float[])
     static const GLuint TRACK_OUT_ISVALID        {8}; // trackCache[L].ssbo_isValid (uint[])
-    static const GLuint TRACK_OUT_ALIGN          {9}; // trackCache[L].ssbo_Align (vec4[])
 
-    //track reduction shader binding layout
+    // Input/Output:
+    static const GLuint TRACK_INOUT_ALIGN          {9}; // trackCache[L].ssbo_Align (vec4[])
+    static const GLuint TRACK_INOUT_POSE           {18};// ssbo_Pose  (mat4) (single pose in/out)
+
+    //reduceTrackShader binding layout
     // Inputs:
     static const GLuint REDUCE_IN_B0        {5};
     static const GLuint REDUCE_IN_B1        {6};
@@ -1089,7 +1100,15 @@ private:
     static const GLuint REDUCE_OUT_CHI2     {12};
     static const GLuint REDUCE_OUT_ISVALID  {13};
 
+    //solveTrackShader shader binding layout
+    static const GLuint SOLVE_IN_B0LEVEL    {10}; // vec4
+    static const GLuint SOLVE_IN_B1LEVEL    {11}; // vec4
+    static const GLuint SOLVE_IN_CHI2LEVEL  {12}; // float
+    static const GLuint SOLVE_IN_VALIDLEVEL {13}; // uint
 
+    static const GLuint SOLVE_IN_HLEVEL     {14}; // float[21] (packed symmetric)
+    static const GLuint SOLVE_INOUT_STATE   {15}; // TrackState (bestChi, divergeCount, bestPose, etc.)
+    static const GLuint SOLVE_INOUT_POSE    {18}; // mat4 (your pose SSBO)
 
     GLuint m_ssboMapPoints{0};
     glm::mat4 m_poseInitial{glm::mat4(1.0f)};
@@ -1291,7 +1310,7 @@ private:
 
 
     //Compute Shaders (Image Processing)
-    GPUCompute* m_gpuCompute{nullptr};
+    GLideCompute* m_gpuCompute{nullptr};
 
 
 

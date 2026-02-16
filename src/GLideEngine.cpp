@@ -18,7 +18,7 @@
 
 #include "GLideEngine.h"
 
-bool GPUCompute::initialize()
+bool GLideCompute::initialize()
 {
     //TODO: Take all from gpuEngineSettings
     m_width = m_GPUEngineSettings->directTrackParams.width;
@@ -69,7 +69,7 @@ bool GPUCompute::initialize()
     return iniitalizeOk;
 }
 
-bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders)
+bool GLideCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders)
 {
     auto it = shaders.find("convert8UCTo32FShader");
     if (it == shaders.end() || !it->second)
@@ -190,7 +190,7 @@ bool GPUCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader> 
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::initializeImagePyramids()
+bool GLideCompute::initializeImagePyramids()
 {
     //initialize level texture dimensions:
     m_levelWidth.resize(m_nLevels);
@@ -260,7 +260,7 @@ bool GPUCompute::initializeImagePyramids()
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::buildPyramid( cv::Mat& image)
+bool GLideCompute::buildPyramid( cv::Mat& image)
 {
     //we want explicitly to have 8bit char
     if (image.type() != CV_8UC1) return false;
@@ -437,7 +437,7 @@ bool GPUCompute::buildPyramid( cv::Mat& image)
     return true;
 }
 
-bool GPUCompute::initializePreCompute()
+bool GLideCompute::initializePreCompute()
 {
     // This function generates pre-allocates buffers.
     // certain parameters are set based a capped max. n. of points
@@ -509,7 +509,7 @@ bool GPUCompute::initializePreCompute()
 
 }
 
-bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
+bool GLideCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
 {
     auto preComputeStartTime = std::chrono::high_resolution_clock::now();
 
@@ -617,12 +617,22 @@ bool GPUCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::M
     return true;
 }
 
-bool GPUCompute::initializeTrack()
+bool GLideCompute::initializeTrack()
 {
 
-    //Output: One per level for every output of cache (SSBOs).
     m_trackCache.resize(m_nLevels);
 
+    glGenBuffers(1, &m_ssbo_Pose);
+    if (m_ssbo_Pose == 0)
+    {
+        Logger::LogError("Error at SSBOs generation; initializeTrack.");
+        return false;
+    }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssbo_Pose);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(glm::mat4)), nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    //Allocate buffers, 1 per level
     for (size_t i = 0; i < m_nLevels; ++i)
     {
         auto& cacheLevel = m_trackCache[i];
@@ -700,7 +710,7 @@ bool GPUCompute::initializeTrack()
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &outN)
+bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &outN)
 {
     //time track:
     auto trackStart = std::chrono::high_resolution_clock::now();
@@ -740,7 +750,21 @@ bool GPUCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &out
         logTime("FAIL");
     };
 
+
+    //start
     cv::Mat Tcw = pose.clone();
+
+    //copy pose to buffer
+    float m[16];
+    for (size_t r = 0; r < 4;++r)
+        for (size_t c = 0; c < 4; ++c)
+            m[c*4 + r] = Tcw.at<float>(r, c);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssbo_Pose);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(m), m);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, TRACK_INOUT_POSE, m_ssbo_Pose);
+
 
 
     //write to shader uniforms
@@ -806,13 +830,13 @@ bool GPUCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &out
 
         for (size_t iteration = 0; iteration < maxIters; ++iteration)
         {
-            glm::mat4 glmPose(1.0f);
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
-                    glmPose[c][r] = Tcw.at<float>(r,c);
+            // glm::mat4 glmPose(1.0f);
+            // for (int r = 0; r < 4; ++r)
+            //     for (int c = 0; c < 4; ++c)
+            //         glmPose[c][r] = Tcw.at<float>(r,c);
 
             //uniforms per iteration
-            glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
+            //glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
             glUniform1i(m_uLevelTrack, L);
             glUniform1i(m_uIterationTrack, iteration);
 
@@ -837,12 +861,15 @@ bool GPUCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &out
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_I,m_preComputeCache[L].ssbo_I);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_J,m_preComputeCache[L].ssbo_J);
 
-            //READ-WRITE
+            //WRITE
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B0,m_trackCache[L].ssbo_B0);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B1,m_trackCache[L].ssbo_B1);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_CHI2,m_trackCache[L].ssbo_Chi2);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_ISVALID,m_trackCache[L].ssbo_isValid);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_ALIGN,m_trackCache[L].ssbo_Align);
+
+            //READ/WRITE
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_INOUT_ALIGN,m_trackCache[L].ssbo_Align);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_INOUT_POSE,m_ssbo_Pose);
 
             //Dispatch
             glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
@@ -1022,7 +1049,7 @@ bool GPUCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &out
     return anyLevelOk;
 }
 
-bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
+bool GLideCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
 {
     //read ssbo
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
@@ -1039,7 +1066,7 @@ bool GPUCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
     return (glGetError() == GL_NO_ERROR);
 }
 
-bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
+bool GLideCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
 {
     if (!hTemp) return false;
     auto matrixTriangleIndex = [] (int a, int b)->int{int base = (a*6)-((a*(a-1))/2); return base + (b-a);};
@@ -1058,7 +1085,7 @@ bool GPUCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
     return (!H.isZero());
 }
 
-cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
+cv::Matx44f GLideCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
 {
     cv::Vec3f w(xi(0), xi(1), xi(2));   // omega
     cv::Vec3f v(xi(3), xi(4), xi(5));   // v (translation twist)
@@ -1098,7 +1125,7 @@ cv::Matx44f GPUCompute::se3exp(const cv::Matx<float, 6, 1> &xi)
     return T;
 }
 
-bool GPUCompute::shutDown()
+bool GLideCompute::shutDown()
 {
    Logger::LogInfoI("GPUCompute: Shutting down.");
 
@@ -1175,7 +1202,7 @@ bool GPUCompute::shutDown()
     return (glGetError() == GL_NO_ERROR);
 }
 
-void GPUCompute::clearTrackReduction(const int Level)
+void GLideCompute::clearTrackReduction(const int Level)
 {
     glm::vec4 z4(0,0,0,0);
     float zf = 0.0f;
@@ -1196,7 +1223,7 @@ void GPUCompute::clearTrackReduction(const int Level)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void GPUCompute::clearPreComputeReduction(const int Level)
+void GLideCompute::clearPreComputeReduction(const int Level)
 {
     auto& cacheLevel = m_preComputeCache[Level];
     float zero21[21] = {0};
@@ -1205,7 +1232,7 @@ void GPUCompute::clearPreComputeReduction(const int Level)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
+cv::Mat GLideCompute::readbackTexture(GLuint texHandle, int w, int h)
 {
     size_t size = (size_t)w * (size_t)h * sizeof(float);
 
@@ -1245,7 +1272,7 @@ cv::Mat GPUCompute::readbackTexture(GLuint texHandle, int w, int h)
     return result;
 }
 
-bool GPUCompute::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& N)
+bool GLideCompute::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& N)
 {
     std::unique_lock<std::mutex> lock(m_gpuTrackResult.mutex);
     if (!m_gpuTrackResult.ready)
@@ -1325,7 +1352,7 @@ bool GLideEngine::initialize()
     m_currentKeyFrameGfx->initialize();
 
     //initialize GPUCompute
-    m_gpuCompute = new GPUCompute(m_GPUEngineSettings);
+    m_gpuCompute = new GLideCompute(m_GPUEngineSettings);
 
     bool gpuComputeOk = true;
     if (!m_gpuCompute->initialize())
