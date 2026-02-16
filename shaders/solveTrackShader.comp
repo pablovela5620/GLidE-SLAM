@@ -35,7 +35,7 @@ layout(std430, binding = 15) buffer TrackStateBuffer
     uint  bestValidPts;    // validPts at bestChi
     uint  failed;          // 1 => failure (singular/NaN/too few meas)
     uint  _pad0;
-} st;
+} state;
 
 float A6(int r, int c, float A[36]) { return A[r*6 + c]; }
 void  SA6(int r, int c, float v, inout float A[36]) { A[r*6 + c] = v; }
@@ -156,12 +156,12 @@ bool finite1(float v) { return !(isnan(v) || isinf(v)); }
 
 void main()
 {
-    if (st.failed != 0u) return;
+    if (state.failed != 0u) return;
 
     // If already stopped, just commit best on last iter (optional)
-    if (st.stop != 0u)
+    if (state.stop != 0u)
     {
-        if (uIsLastIter != 0) poseBuf.Tcw = st.bestPose;
+        if (uIsLastIter != 0) poseBuf.Tcw = state.bestPose;
         return;
     }
 
@@ -171,41 +171,41 @@ void main()
 
     if (nMeas < uMinMeasurements)
     {
-        st.failed = 1u;
-        st.stop   = 1u;
+        state.failed = 1u;
+        state.stop   = 1u;
         return;
     }
 
     float chiMean = Chi2Level / float(nMeas);
     if (!finite1(chiMean))
     {
-        st.failed = 1u;
-        st.stop   = 1u;
+        state.failed = 1u;
+        state.stop   = 1u;
         return;
     }
 
-    if (uIteration == 0) st.levelStartChi = chiMean;
-    st.lastChi = chiMean;
+    if (uIteration == 0) state.levelStartChi = chiMean;
+    state.lastChi = chiMean;
 
     mat4 poseBefore = poseBuf.Tcw;
 
     // best / diverge logic (same as your CPU)
-    if (chiMean < st.bestChi)
+    if (chiMean < state.bestChi)
     {
-        st.bestChi       = chiMean;
-        st.bestPose      = poseBefore;
-        st.bestValidPts  = validPts;
-        st.divergeCount  = 0u;
+        state.bestChi       = chiMean;
+        state.bestPose      = poseBefore;
+        state.bestValidPts  = validPts;
+        state.divergeCount  = 0u;
     }
     else
     {
-        st.divergeCount++;
-        if (st.divergeCount >= 3u)
+        state.divergeCount++;
+        if (state.divergeCount >= 3u)
         {
-            poseBuf.Tcw = st.bestPose; // rollback
-            st.stop     = 1u;
-            st.hadValid = 1u;
-            if (uIsLastIter != 0) poseBuf.Tcw = st.bestPose;
+            poseBuf.Tcw = state.bestPose; // rollback
+            state.stop     = 1u;
+            state.hadValid = 1u;
+            if (uIsLastIter != 0) poseBuf.Tcw = state.bestPose;
             return;
         }
     }
@@ -227,8 +227,8 @@ void main()
     float minDiag = min(min(min(min(min(Hfull[0], Hfull[7]), Hfull[14]), Hfull[21]), Hfull[28]), Hfull[35]);
     if (minDiag < 1e-6)
     {
-        st.failed = 1u;
-        st.stop   = 1u;
+        state.failed = 1u;
+        state.stop   = 1u;
         return;
     }
 
@@ -237,8 +237,8 @@ void main()
     bool ok = choleskySolve6(Hfull, b, delta);
     if (!ok)
     {
-        st.failed = 1u;
-        st.stop   = 1u;
+        state.failed = 1u;
+        state.stop   = 1u;
         return;
     }
 
@@ -246,13 +246,13 @@ void main()
     float dn = 0.0;
     for (int i=0;i<6;++i)
     {
-        if (!finite1(delta[i])) { st.failed=1u; st.stop=1u; return; }
+        if (!finite1(delta[i])) { state.failed=1u; state.stop=1u; return; }
         dn += delta[i]*delta[i];
     }
     dn = sqrt(dn);
-    st.lastDeltaNorm = dn;
+    state.lastDeltaNorm = dn;
 
-    st.hadValid = 1u;
+    state.hadValid = 1u;
 
     // Your ordering: xi = [delta(3..5), delta(0..2)]
     vec3 w = vec3(delta[3], delta[4], delta[5]); // omega
@@ -263,12 +263,12 @@ void main()
     // Match your current GPU code: Tcw = Tcw * se3exp(xi)
     poseBuf.Tcw = poseBuf.Tcw * dT;
 
-    if (dn < uEpsNorm) st.stop = 1u;
+    if (dn < uEpsNorm) state.stop = 1u;
 
     // On last iter, force commit bestPose (matches CPU: Tcw=bestT at end of level)
     if (uIsLastIter != 0)
     {
-        poseBuf.Tcw = st.bestPose;
-        st.stop = 1u;
+        poseBuf.Tcw = state.bestPose;
+        state.stop = 1u;
     }
 }
