@@ -31,7 +31,7 @@ namespace ORB_SLAM2
 {
 
 System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
-               const bool bUseViewer):mSensor(sensor), mpGPUEngine(static_cast<GPUEngine*>(NULL)), mbReset(false),mbActivateLocalizationMode(false),
+               const bool bUseViewer):mSensor(sensor), mpGPUEngine(static_cast<GLideEngine*>(NULL)), mbReset(false),mbActivateLocalizationMode(false),
         mbDeactivateLocalizationMode(false)
 {
     // Output welcome message
@@ -102,10 +102,10 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         //Read viewer settings files:
         mpGPUEngineSettings = new GPUEngineSettings();
         GLideUtils::ReadConfigFile("Examples/Monocular/GPUConfig.yaml", mpGPUEngineSettings);
-        mpGPUEngine = new GPUEngine(this, mpGPUEngineSettings);
+        mpGPUEngine = new GLideEngine(this, mpGPUEngineSettings);
         if (mpMap)
             mpGPUEngine->setMap(mpMap);
-        mptGPUEngine = new thread(&GPUEngine::run, mpGPUEngine);
+        mptGPUEngine = new thread(&GLideEngine::run, mpGPUEngine);
         mpTracker->SetViewer(mpGPUEngine);
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }

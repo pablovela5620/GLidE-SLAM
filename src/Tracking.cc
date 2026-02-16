@@ -183,7 +183,7 @@ namespace ORB_SLAM2
         mpLoopClosing = pLoopClosing;
     }
 
-    void Tracking::SetViewer(GPUEngine *pViewer)
+    void Tracking::SetViewer(GLideEngine *pViewer)
     {
         mpGPUEngine = pViewer;
     }

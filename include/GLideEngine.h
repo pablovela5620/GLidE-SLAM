@@ -1,3 +1,21 @@
+/*
+* GPUEngine - GL-accelerated Direct Tracking for Embedded SLAM
+ *
+ * Copyright (c) 2025 [Carlos A. Pinheiro de Sousa / University of Konstanz]
+ *
+ * This file is part of GLidE-SLAM and is provided under a PROPRIETARY LICENSE.
+ * Unlike other parts of this project (licensed under GPL-3.0), this file may NOT be:
+ *   - Used in commercial products without written permission
+ *   - Redistributed in modified form
+ *   - Used to train machine learning models
+ *
+ * For academic/research use: Free to use with citation.
+ * For commercial licensing: Contact [carlos.pinheiro-de-sousa@uni-konstanz.de]
+ *
+ * If you use this code in academic work, please cite:
+ *   [Your IROS 2025 paper citation here]
+ */
+
 #ifndef GPU_ENGINE
 #define GPU_ENGINE
 
@@ -1083,11 +1101,11 @@ private:
 
 };
 
-class GPUEngine
+class GLideEngine
 {
 public:
     //TODO: separeate methods into private/public
-    GPUEngine(ORB_SLAM2::System* system, GPUEngineSettings* slamSettings) : m_system(system), m_GPUEngineSettings(slamSettings){};
+    GLideEngine(ORB_SLAM2::System* system, GPUEngineSettings* slamSettings) : m_system(system), m_GPUEngineSettings(slamSettings){};
 
     bool initialize();
     void run();

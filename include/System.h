@@ -34,10 +34,10 @@
 #include "LoopClosing.h"
 #include "KeyFrameDatabase.h"
 #include "ORBVocabulary.h"
-#include "GPUEngine.h"
+#include "GLideEngine.h"
 #include "GPUEngineSettings.h"
 
-class GPUEngine;
+class GLideEngine;
 
 namespace ORB_SLAM2
 {
@@ -153,7 +153,7 @@ private:
     LoopClosing* mpLoopCloser;
 
     // The viewer draws the map and the current camera pose. It uses Pangolin.
-    GPUEngine* mpGPUEngine;
+    GLideEngine* mpGPUEngine;
 
     //FrameDrawer* mpFrameDrawer;
     //MapDrawer* mpMapDrawer;

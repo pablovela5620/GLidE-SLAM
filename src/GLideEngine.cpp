@@ -1,4 +1,22 @@
-#include "GPUEngine.h"
+/*
+* GPUEngine - GL-accelerated Direct Tracking for Embedded SLAM
+ *
+ * Copyright (c) 2025 [Carlos A. Pinheiro de Sousa / University of Konstanz]
+ *
+ * This file is part of GLidE-SLAM and is provided under a PROPRIETARY LICENSE.
+ * Unlike other parts of this project (licensed under GPL-3.0), this file may NOT be:
+ *   - Used in commercial products without written permission
+ *   - Redistributed in modified form
+ *   - Used to train machine learning models
+ *
+ * For academic/research use: Free to use with citation.
+ * For commercial licensing: Contact [carlos.pinheiro-de-sousa@uni-konstanz.de]
+ *
+ * If you use this code in academic work, please cite:
+ *   [Your IROS 2025 paper citation here]
+ */
+
+#include "GLideEngine.h"
 
 bool GPUCompute::initialize()
 {
@@ -1215,13 +1233,13 @@ bool GPUCompute::getTrackResult(cv::Mat& pose, float& chi2, int& N)
     return success;
 }
 
-bool GPUEngine::getTrackResult(cv::Mat& pose, float& chi2, int& N)
+bool GLideEngine::getTrackResult(cv::Mat& pose, float& chi2, int& N)
 {
     if (!m_gpuCompute) return false;
     return m_gpuCompute->getTrackResult(pose, chi2, N);
 }
 
-bool GPUEngine::initialize()
+bool GLideEngine::initialize()
 {
 
     m_isInitialized = true;
@@ -1295,7 +1313,7 @@ bool GPUEngine::initialize()
     return m_isInitialized;
 }
 
-void GPUEngine::run()
+void GLideEngine::run()
 {
     if (!m_isInitialized)
     {
@@ -1345,7 +1363,7 @@ void GPUEngine::run()
     }
 }
 
-void GPUEngine::updateDirectTracking()
+void GLideEngine::updateDirectTracking()
 {
     cv::Mat img, pose;
     std::vector<glm::vec4> pts;
@@ -1403,7 +1421,7 @@ void GPUEngine::updateDirectTracking()
     }
 }
 
-void GPUEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
+void GLideEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
@@ -1423,7 +1441,7 @@ void GPUEngine::updateNewFrame(const cv::Mat &image, const cv::Mat &pose)
     }
 }
 
-void GPUEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
+void GLideEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapPoints,const cv::Mat& pose)
 {
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
@@ -1439,7 +1457,7 @@ void GPUEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> mapP
 }
 
 
-void GPUEngine::initializeWindows()
+void GLideEngine::initializeWindows()
 {
     const int widthOffset = m_width + 80;
     const int heightOffset = m_height + 80;
@@ -1495,7 +1513,7 @@ void GPUEngine::initializeWindows()
     Logger::LogInfoIII("Viewer: All windows initialized.");
 }
 
-void GPUEngine::render()
+void GLideEngine::render()
 {
     //set context and do normal rendering
     ensureWindowContext(m_windowMap3D->getDisplay(), m_windowMap3D->getSurface(), m_windowMap3D->getContext());
@@ -1504,7 +1522,7 @@ void GPUEngine::render()
     PollEvents();
 }
 
-void GPUEngine::renderFrames2D()
+void GLideEngine::renderFrames2D()
 {
     //set context and do normal rendering
 
@@ -1538,7 +1556,7 @@ void GPUEngine::renderFrames2D()
     // }
 }
 
-void GPUEngine::renderMap3D()
+void GLideEngine::renderMap3D()
 {
 
 
@@ -1621,7 +1639,7 @@ void GPUEngine::renderMap3D()
     m_windowMap3D->onUpdateWindow();
 }
 
-void GPUEngine::updateMapPoints()
+void GLideEngine::updateMapPoints()
 {
     //make a local copy and load to buffer fetch pts addresses from map
     if (!m_stop)
@@ -1671,7 +1689,7 @@ void GPUEngine::updateMapPoints()
 
 }
 
-void GPUEngine::updateFrames3D()
+void GLideEngine::updateFrames3D()
 {
     if (!m_stop)
     {
@@ -1681,7 +1699,7 @@ void GPUEngine::updateFrames3D()
     }
 }
 
-void GPUEngine::updateKFrames()
+void GLideEngine::updateKFrames()
 {
     //TODO: fix connection between frames (probably uses parent?)
     const std::vector<ORB_SLAM2::KeyFrame*> frames = m_map->GetAllKeyFrames();
@@ -1758,7 +1776,7 @@ void GPUEngine::updateKFrames()
 
 }
 
-void GPUEngine::updateTweenIndirectFrames()
+void GLideEngine::updateTweenIndirectFrames()
 {
     const std::vector<ORB_SLAM2::Frame>& frames = m_map->GetTweenFrames();
     glm::mat4 F(1.0f);
@@ -1803,7 +1821,7 @@ void GPUEngine::updateTweenIndirectFrames()
     }
 }
 
-void GPUEngine::updateTweenDirectFrames()
+void GLideEngine::updateTweenDirectFrames()
 {
     const std::vector<ORB_SLAM2::FrameDirect>& frames = m_map->GetDirectTweenFrames();
     glm::mat4 F(1.0f);
@@ -1850,7 +1868,7 @@ void GPUEngine::updateTweenDirectFrames()
     }
 }
 using namespace UIEvents;
-void GPUEngine::PollEvents()
+void GLideEngine::PollEvents()
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -1929,7 +1947,7 @@ void GPUEngine::PollEvents()
 }
 
 
-void GPUEngine::updateIndirectFeatureMatches(const cv::Mat &image, const std::vector<cv::KeyPoint> &kpts1, const std::vector<cv::KeyPoint> &kpts2, const std::vector<float> &d)
+void GLideEngine::updateIndirectFeatureMatches(const cv::Mat &image, const std::vector<cv::KeyPoint> &kpts1, const std::vector<cv::KeyPoint> &kpts2, const std::vector<float> &d)
 {
     if (!m_stop)
     {
@@ -1948,7 +1966,7 @@ void GPUEngine::updateIndirectFeatureMatches(const cv::Mat &image, const std::ve
     }
 }
 
-void GPUEngine::printVersions()
+void GLideEngine::printVersions()
 {
 
     const GLubyte *renderer = glGetString(GL_RENDERER);
@@ -1981,7 +1999,7 @@ void GPUEngine::printVersions()
     }
 }
 
-void GPUEngine::shutdown()
+void GLideEngine::shutdown()
 {
     stop();
 
@@ -2025,7 +2043,7 @@ void GPUEngine::shutdown()
 
 }
 
-void GPUEngine::onMouse(const UIEvent &e)
+void GLideEngine::onMouse(const UIEvent &e)
 {
     auto& eventType = e.getType();
 
@@ -2058,7 +2076,7 @@ void GPUEngine::onMouse(const UIEvent &e)
     }
 }
 
-void GPUEngine::onKeyboard(const UIEvent &e)
+void GLideEngine::onKeyboard(const UIEvent &e)
 {
     auto& eventType = e.getType();
     switch (eventType)
@@ -2099,7 +2117,7 @@ void GPUEngine::onKeyboard(const UIEvent &e)
     }
 }
 
-void GPUEngine::onWindow(const UIEvent &e)
+void GLideEngine::onWindow(const UIEvent &e)
 {
     auto& eventType = e.getType();
     switch (eventType)
@@ -2119,7 +2137,7 @@ void GPUEngine::onWindow(const UIEvent &e)
 
 }
 
-void GPUEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLContext context)
+void GLideEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLContext context)
 {
     if (m_eglContext != context || m_eglSurface != surface || m_eglDisplay != display)
     {
@@ -2130,18 +2148,18 @@ void GPUEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLC
     }
 }
 
-void GPUEngine::exit()
+void GLideEngine::exit()
 {
     shutdown();
 }
 
-void GPUEngine::stop()
+void GLideEngine::stop()
 {
     std::lock_guard<std::mutex> lock(mMutexUpdate);
     m_stop = true;
 }
 
-void GPUEngine::initializeShaders()
+void GLideEngine::initializeShaders()
 {
     //TODO: Remove all smart pointers -> Use raw pointers
 
@@ -2264,7 +2282,7 @@ void GPUEngine::initializeShaders()
 
 }
 
-void GPUEngine::initializeBuffers()
+void GLideEngine::initializeBuffers()
 {
     glGenFramebuffers(1, &renderFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, renderFBO);
@@ -2280,7 +2298,7 @@ void GPUEngine::initializeBuffers()
     Logger::LogInfoIII("Viewer: Frame buffers initialized.");
 }
 
-void GPUEngine::initializeMapPoints()
+void GLideEngine::initializeMapPoints()
 {
     m_mapPointsGfx = new PointCloud();
     m_mapPointsGfx->initializeEmptyBuffer();
@@ -2291,7 +2309,7 @@ void GPUEngine::initializeMapPoints()
     Logger::LogInfoIII("Viewer: Point cloud maps initialized.");
 }
 
-void GPUEngine::initializeCamera()
+void GLideEngine::initializeCamera()
 {
     glm::vec3 camPos(0.0f, 0.0f, -5.0f);
     glm::vec3 camTarget(0.0f, 0.0f, 1.0f);
@@ -2304,7 +2322,7 @@ void GPUEngine::initializeCamera()
     m_activeCamera->setFollow(follow, followDistance);
 }
 
-void GPUEngine::setMatrices()
+void GLideEngine::setMatrices()
 {
     //because here we use OpenXR's matrices
     m_vMatrix = m_activeCamera->getViewMatrix();
@@ -2312,7 +2330,7 @@ void GPUEngine::setMatrices()
     m_mvpMatrix = m_pMatrix * m_vMatrix * m_mMatrix;
 }
 
-void GPUEngine::setSquareUpdateFlag(const char &state)
+void GLideEngine::setSquareUpdateFlag(const char &state)
 {
     std::unique_lock<std::mutex> lock(m_viewerMutex); {
         switch (state)
@@ -2337,7 +2355,7 @@ void GPUEngine::setSquareUpdateFlag(const char &state)
     }
 }
 
-bool GPUEngine::setActiveCamera(std::shared_ptr<Camera> camera)
+bool GLideEngine::setActiveCamera(std::shared_ptr<Camera> camera)
 {
     if (camera != nullptr)
     {
@@ -2347,7 +2365,7 @@ bool GPUEngine::setActiveCamera(std::shared_ptr<Camera> camera)
     return false;
 }
 
-void GPUEngine::initializeProjectionMatrix()
+void GLideEngine::initializeProjectionMatrix()
 {
     m_p = glm::perspective(glm::radians(m_fov),
                            static_cast<float>(m_width / m_height),

@@ -119,8 +119,8 @@ add_library(${PROJECT_NAME} SHARED
         include/ImageHandler.h
         include/GlideUtils.h
         src/ImageHandler.cc
-        include/GPUEngine.h
-        src/GPUEngine.cpp
+        include/GLideEngine.h
+        src/GLideEngine.cpp
         ${PROJECT_SOURCE_DIR}/Thirdparty/glad/src/glad.c
         include/GlideUtils.h
         src/GlideUtils.cpp
