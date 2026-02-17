@@ -945,7 +945,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
         m_gpuTrackResult.frameID = frameID;
         m_gpuTrackResult.pose = Tcw.clone();
-        m_gpuTrackResult.chi2 = finalChi2Mean;
+        m_gpuTrackResult.chi2 = outChi2;
         m_gpuTrackResult.N = outN;
         m_gpuTrackResult.success = anyLevelOk;
         m_gpuTrackResult.ready = true;
