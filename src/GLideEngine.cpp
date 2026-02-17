@@ -729,11 +729,15 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     //time track:
     auto trackStart = std::chrono::high_resolution_clock::now();
 
-    auto logTime = [&](const std::string& status) {
+    auto logTime = [&](const std::string& status, float chi2Val = 0.0f) {
         glFinish();
         auto trackEnd = std::chrono::high_resolution_clock::now();
         float trackMs = std::chrono::duration<float, std::milli>(trackEnd - trackStart).count();
-        Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) + " ms");
+        if (chi2Val > 0.0f)
+            Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) +
+                               " ms, chi2=" + std::to_string(chi2Val));
+        else
+            Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) + " ms");
     };
     if (pose.empty() || pose.type() != CV_32FC1 || m_nLevels <= 0 || m_nPoints == 0 || m_nPoints > m_maxPoints)
     {
@@ -952,7 +956,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     }
     m_gpuTrackResult.cv.notify_one();
 
-    logTime(anyLevelOk ? "SUCCESS" : "FAIL");
+    logTime(anyLevelOk ? "SUCCESS" : "FAIL", outChi2);
     return anyLevelOk;
 }
 
