@@ -1,5 +1,5 @@
 /*
-* GPUEngine - GL-accelerated Direct Tracking for Embedded SLAM
+* GPUEngine - GL-accelerated Indirect Direct Embedded SLAM
  *
  * Copyright (c) 2025 [Carlos A. Pinheiro de Sousa / University of Konstanz]
  *
@@ -764,6 +764,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         logTime("FAIL");
     };
 
+    const uint32_t lastIteraion = m_maxIterations - 1;
 
     //start
     cv::Mat Tcw = pose.clone();
@@ -795,11 +796,6 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     outChi2 = 0.0f;
     outN = 0;
 
-    //TODO: pass as parameters through config file
-    const int maxIters = 10;
-    const float epsNorm = 1e-4f;
-    const int minMeasurements = 16 * 3; // same guard as CPU
-
     float finalChi2Mean = std::numeric_limits<float>::max();
     bool anyLevelOk = false;
 
@@ -822,43 +818,11 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     {
         //one H per level, read back from SSBO (precomputed)
         Eigen::Matrix<float,6,6> H = Eigen::Matrix<float,6,6>::Zero();
-        float Htemp[21];
-        if (!readSSBO(m_preComputeCache[L].ssbo_HLevel,Htemp,sizeof(Htemp)))
+
+        for (uint32_t iteration = 0; iteration < m_maxIterations; ++iteration)
         {
-            Logger::LogError("Could not read H Level. Aborting.");
-            publishFail();
-            return false;
-        }
-        rebuildH(H,Htemp);
-
-        if (H.diagonal().minCoeff() < 1e-6f)
-        {
-            Logger::LogError("H diagonal coefficients too small! Aborting.");
-            publishFail();
-            return false;
-        }
-
-        //per level stats:
-        float bestChi = std::numeric_limits<float>::max();
-        cv::Mat bestT = Tcw.clone();
-        int divergeCount = 0;
-        bool hadValidIteration = false;
-        uint32_t bestValidPts = 0u;
-
-        //debug stats
-        int levelIters = 0;
-        float levelStartChi = 0.0f;
-
-        for (size_t iteration = 0; iteration < maxIters; ++iteration)
-        {
-            // glm::mat4 glmPose(1.0f);
-            // for (int r = 0; r < 4; ++r)
-            //     for (int c = 0; c < 4; ++c)
-            //         glmPose[c][r] = Tcw.at<float>(r,c);
-
             //************************************ TRACK SHADER ************************************
             //uniforms per iteration
-            //glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
             glUniform1i(m_uLevelTrack, L);
             glUniform1i(m_uIterationTrack, iteration);
 
@@ -924,7 +888,24 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
 
             //************************************ SOLVE SHADER ************************************
             glUseProgram(m_solveTrackShader);
+
+            glUniform1i(m_uPatchSizeSolveTrack, (GLint)m_patchSize);
+            glUniform1i(m_uIterationSolveTrack, iteration);
+            glUniform1i(m_uMinMeasurementsSolveTrack, (GLint)m_minMeasurements);
+            glUniform1i(m_uIsLastIterationSolveTrack, (iteration == lastIteraion) ? 1 : 0);
+            glUniform1f(m_uEpsNormSolveTrack, m_epsNorm);
+
+            //READ
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_B0LEVEL,m_trackCache[L].ssbo_B0Level);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_B1LEVEL,m_trackCache[L].ssbo_B1Level);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_CHI2LEVEL,m_trackCache[L].ssbo_Chi2Level);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_VALIDLEVEL,m_trackCache[L].ssbo_isValidLevel);
+
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_HLEVEL,m_preComputeCache[L].ssbo_HLevel);
+
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_STATE,m_trackCache[L].ssbo_State);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_POSE,m_ssbo_PoseTrack);
+
 
 
             glDispatchCompute(1,1,1);
@@ -933,140 +914,35 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
 
             //Make sure to set the track shader again for next iteration
             glUseProgram(m_trackShader);
-
-            //in same iteration, readback
-            glm::vec4 b0(0,0,0,0), b1(0,0,0,0);
-            float chiSum = 0.0f;
-            uint32_t validPts = 0u;
-
-            if (!readSSBO(m_trackCache[L].ssbo_B0Level, &b0, sizeof(glm::vec4)))
-            {
-                Logger::LogError("Could not read B0 Level. Aborting.");
-                publishFail();
-                return false;
-            }
-            if (!readSSBO(m_trackCache[L].ssbo_B1Level, &b1, sizeof(glm::vec4)))
-            {
-                Logger::LogError("Could not read B1 Level. Aborting.");
-                publishFail();
-                return false;
-            }
-            if (!readSSBO(m_trackCache[L].ssbo_Chi2Level, &chiSum, sizeof(float)))
-            {
-                Logger::LogError("Could not read chi2 Level. Aborting.");
-                publishFail();
-                return false;
-            }
-            if (!readSSBO(m_trackCache[L].ssbo_isValidLevel, &validPts, sizeof(uint32_t)))
-            {
-                Logger::LogError("Could not read valid Level. Aborting.");
-                publishFail();
-                return false;
-            }
-
-
-            int nTotalMeasurements = (int)validPts * (int)m_patchArea;
-            if (nTotalMeasurements < minMeasurements)
-            {
-                Logger::LogWarning(
-                    "GPU Track: L=" + std::to_string(L) +
-                    " iter=" + std::to_string(iteration) +
-                    " too few meas=" + std::to_string(nTotalMeasurements) +
-                    " validPts=" + std::to_string(validPts) +
-                    "/" + std::to_string(m_nPoints));
-                break;
-            }
-            float chiMean = chiSum / (float)nTotalMeasurements;
-
-            if (iteration == 0) levelStartChi = chiMean;
-            levelIters = iteration + 1;
-
-            //Chi is expected to decrease per iteration, if not use last best pose
-            if (chiMean < bestChi)
-            {
-                bestChi = chiMean;
-                bestT = Tcw.clone();
-                bestValidPts = validPts;
-                divergeCount = 0;
-            }
-            else
-            {
-                ++divergeCount;
-                if (divergeCount >= 3)
-                {
-                    Tcw = bestT.clone();
-                    hadValidIteration = true;
-                    Logger::LogWarning(
-                   "GPU Track: L=" + std::to_string(L) + " Diverged 3x: Chi2 mean=" + std::to_string(chiMean)+
-                   " rolling back to bestChi=" + std::to_string(bestChi));
-                    break;
-                }
-            }
-
-            Eigen::Matrix<float,6,1> b;
-            b << b0.x, b0.y, b0.z, b0.w, b1.x, b1.y;
-
-            Eigen::Matrix<float,6,1> delta = H.ldlt().solve(b);
-            if (!delta.allFinite())
-            {
-                Logger::LogError("GPU Track: L=" + std::to_string(L) +
-                " iter=" + std::to_string(iteration) +
-                  " delta not finite.");
-                break;
-            }
-
-            hadValidIteration = true;
-
-            cv::Matx<float,6,1> xi(delta(3), delta(4), delta(5), delta(0), delta(1), delta(2));
-            Tcw = Tcw * cv::Mat(se3exp(xi));
-
-            if (delta.norm() < epsNorm)
-            {
-                Logger::LogInfoI(
-                        "GPU Track: L=" + std::to_string(L) +
-                        " iter=" + std::to_string(iteration) +
-                        " converged (|delta|=" + std::to_string(delta.norm()) + " < " + std::to_string(epsNorm) + ")");
-                break;
-            }
         }
-
-
-        if (!hadValidIteration)
-        {
-            Logger::LogError(
-                "GPU Track: L=" + std::to_string(L) +
-                " failed (no valid iteration)");
-            publishFail();
-            return false;
-        }
-
-
-        anyLevelOk = true;
-        Tcw = bestT.clone();
-
-        Logger::LogInfoII(
-        "GPU Track: L=" + std::to_string(L) +
-        " DONE iters=" + std::to_string(levelIters) +
-        " chi2: " + std::to_string(levelStartChi) +
-        " -> " + std::to_string(bestChi) +
-        " validPts=" + std::to_string(bestValidPts) +
-        "/" + std::to_string(m_nPoints));
-
-        if (L == 0)
-        {
-            finalChi2Mean = bestChi;
-            outChi2 = finalChi2Mean;
-            outN = (int)(bestValidPts * (uint32_t)m_patchArea); // per point; total is validPts*patchArea (available during last iter)
-        }
-
     }
 
-    Logger::LogInfoIII(
-    "GPU Track: " + std::string(anyLevelOk ? "SUCCESS" : "FAILED") +
-    " finalChi2=" + std::to_string(finalChi2Mean) +
-    " outN=" + std::to_string(outN));
+    glUseProgram(0);
+
+    float poseResult[16];
+    if (!readSSBO(m_ssbo_PoseTrack, &poseResult, sizeof(poseResult)))
+    {
+        Logger::LogError("Could not read pose. Aborting.");
+        publishFail();
+        return false;
+    }
+
+    TrackStateBlock trackStateResult;
+    if (!readSSBO(m_trackCache[0].ssbo_State, &trackStateResult, sizeof(trackStateResult)))
+    {
+        Logger::LogError("Could not read track results. Aborting.");
+        publishFail();
+        return false;
+    }
+
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c)
+            Tcw.at<float>(r,c) = poseResult[c*4 + r];
 
     pose = Tcw.clone();
+    outChi2 = trackStateResult.bestChi;
+    outN = int(trackStateResult.bestValidPts) * m_patchArea;
+    anyLevelOk = (trackStateResult.failed == 0u) && (trackStateResult.hadValid != 0u);
 
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);

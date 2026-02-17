@@ -1,5 +1,5 @@
 /*
-* GPUEngine - GL-accelerated Direct Tracking for Embedded SLAM
+* GPUEngine - GL-accelerated Indirect Direct Embedded SLAM
  *
  * Copyright (c) 2025 [Carlos A. Pinheiro de Sousa / University of Konstanz]
  *
@@ -941,6 +941,7 @@ private:
     int m_nLevels{0};
     int m_patchSize{0};
     uint32_t m_nPoints{0};
+    uint32_t m_maxIterations{5};
     int m_patchArea{0};
     float m_patchCenter{0.0f};
     uint32_t m_enableAlign{0};
@@ -950,6 +951,10 @@ private:
     glm::vec4 m_rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
     glm::vec4 m_maxShift{0.0f, 0.0f, 0.0f, 0.0f};
     float m_epsNorm{0.0f};
+    uint32_t m_minPoints{0};
+
+    //TODO: Should be set dynamically (based on min n of points, patch area)
+    uint32_t m_minMeasurements{16*3};
 
 
     float m_scaleFactor{1.0f};

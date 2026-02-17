@@ -49,6 +49,8 @@ bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GPUEngin
     GPUEngineSettings->directTrackParams.searchRadius   = fs["DirTrackParams.searchRadius"];
     GPUEngineSettings->directTrackParams.huberK        = fs["DirTrackParams.huberK"];
     GPUEngineSettings->directTrackParams.epsNorm        = fs["DirTrackParams.epsNorm"];
+    GPUEngineSettings->directTrackParams.minPoints        = fs["DirTrackParams.minPoints"];
+    GPUEngineSettings->directTrackParams.maxPoints        = fs["DirTrackParams.maxIterations"];
 
     // vec4 (per-level thresholds)
     GPUEngineSettings->directTrackParams.searchThreshold = readInVector(fs, "DirTrackParams.searchThreshold", 0.0f);

@@ -67,6 +67,7 @@ struct GLideSettings
 
 		int nLevels{8};
 		int patchSize{7};
+		int maxIterations{5};
 		float scaleFactor{1.2f};
 
 		int maxPoints{1024};
@@ -74,6 +75,7 @@ struct GLideSettings
 		int searchRadius{3};
 		float huberK{0.08f};
 		float epsNorm{0.0001f};
+		int minPoints{10};
 
 		glm::vec4 searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
 		glm::vec4 rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
