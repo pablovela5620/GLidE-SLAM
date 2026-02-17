@@ -739,6 +739,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         else
             Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) + " ms");
     };
+
     if (pose.empty() || pose.type() != CV_32FC1 || m_nLevels <= 0 || m_nPoints == 0 || m_nPoints > m_maxPoints)
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
@@ -748,7 +749,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         m_gpuTrackResult.N = 0;
         m_gpuTrackResult.success = false;
         m_gpuTrackResult.ready = true;
-        m_gpuTrackResult.cv.notify_one();
+        m_gpuTrackResult.resultReady.notify_one();
         logTime("EARLY_FAIL");
         return false;
     }
@@ -764,7 +765,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             m_gpuTrackResult.success = false;
             m_gpuTrackResult.ready = true;
         }
-        m_gpuTrackResult.cv.notify_one();
+        m_gpuTrackResult.resultReady.notify_one();
         logTime("FAIL");
     };
 
@@ -954,7 +955,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         m_gpuTrackResult.success = anyLevelOk;
         m_gpuTrackResult.ready = true;
     }
-    m_gpuTrackResult.cv.notify_one();
+    m_gpuTrackResult.resultReady.notify_one();
 
     logTime(anyLevelOk ? "SUCCESS" : "FAIL", outChi2);
     return anyLevelOk;
@@ -1186,25 +1187,29 @@ cv::Mat GLideCompute::readbackTexture(GLuint texHandle, int w, int h)
 bool GLideCompute::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, int& N)
 {
     std::unique_lock<std::mutex> lock(m_gpuTrackResult.mutex);
-    if (!m_gpuTrackResult.ready)
-    {
-        Logger::LogWarning("GPUCompute: track result not ready! dispatched id="
-            + std::to_string(m_gpuTrackResult.frameID) + " check result id=" + std::to_string(frameID));
-        return false;
-    }
-    if (m_gpuTrackResult.frameID != frameID)
-    {
-        Logger::LogWarning("GPUCompute: Mismatch in frame number! dispatched id="
-            + std::to_string(m_gpuTrackResult.frameID) + " check result id=" + std::to_string(frameID));
-        return false;
-    }
+
+    m_gpuTrackResult.resultReady.wait(lock, [&]()
+        {return m_gpuTrackResult.ready && (m_gpuTrackResult.frameID == frameID);});
+
+    //
+    // if (!m_gpuTrackResult.ready)
+    // {
+    //     Logger::LogWarning("GPUCompute: track result not ready! dispatched id="
+    //         + std::to_string(m_gpuTrackResult.frameID) + " check result id=" + std::to_string(frameID));
+    //     return false;
+    // }
+    // if (m_gpuTrackResult.frameID != frameID)
+    // {
+    //     Logger::LogWarning("GPUCompute: Mismatch in frame number! dispatched id="
+    //         + std::to_string(m_gpuTrackResult.frameID) + " check result id=" + std::to_string(frameID));
+    //     return false;
+    // }
 
 
     pose = m_gpuTrackResult.pose.clone();
     chi2 = m_gpuTrackResult.chi2;
     N = m_gpuTrackResult.N;
     bool success = m_gpuTrackResult.success;
-
     m_gpuTrackResult.ready = false;
 
     return success;
@@ -1385,6 +1390,9 @@ void GLideEngine::updateDirectTracking()
         }
     }
 
+    m_newFrameReady.notify_all();
+
+
     //first step (either precompute/direct tracking, build image pyramids)
     if (!img.empty())
     {
@@ -1411,11 +1419,14 @@ void GLideEngine::updateNewFrame(uint32_t frameID, const cv::Mat &image, const c
     {
         Logger::LogInfoI("GPUEngine: updating new frame.");
 
-        std::lock_guard<std::mutex> lock(m_directTrackingMutex);
+        std::unique_lock<std::mutex> lock(m_directTrackingMutex);
 
-        //avoid interrupt precompute (this should not happen anyway)
-        if (m_runPrecompute)
-            return;
+        m_newFrameReady.wait(lock, [&]()
+            {return (!m_directTrackDataAvailable && !m_runPrecompute) || m_stop.load();});
+
+        // //avoid interrupt precompute (this should not happen anyway)
+        // if (m_runPrecompute)
+        //     return;
 
         m_sourceFrameID = frameID;
         m_sourceImage = image.clone();
@@ -1430,7 +1441,12 @@ void GLideEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> ma
         return;
     {
         Logger::LogInfoI("GPUEngine: updating ref frame.");
-        std::lock_guard<std::mutex> lock(m_directTrackingMutex);
+        std::unique_lock<std::mutex> lock(m_directTrackingMutex);
+
+        // wait until slot is free
+        m_newFrameReady.wait(lock, [&]()
+            {return (!m_directTrackDataAvailable) || m_stop.load();});
+
         m_sourceImage = image.clone();
         m_slamMapPoints = std::move(mapPoints);
         m_initialPose = pose.clone();
@@ -1438,7 +1454,6 @@ void GLideEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> ma
         m_directTrackDataAvailable = true;
     }
 }
-
 
 void GLideEngine::initializeWindows()
 {
@@ -2195,7 +2210,6 @@ void GLideEngine::exit()
 
 void GLideEngine::stop()
 {
-    std::lock_guard<std::mutex> lock(mMutexUpdate);
     m_stop = true;
 }
 
@@ -2380,7 +2394,7 @@ void GLideEngine::setMatrices()
 
 void GLideEngine::setSquareUpdateFlag(const char &state)
 {
-    std::unique_lock<std::mutex> lock(m_viewerMutex); {
+    std::unique_lock<std::mutex> lock(m_stateMutex); {
         switch (state)
         {
             case 1: //startup

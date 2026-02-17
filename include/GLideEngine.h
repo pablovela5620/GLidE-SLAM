@@ -1,7 +1,7 @@
 /*
 * GPUEngine - GL-accelerated Indirect Direct Embedded SLAM
  *
- * Copyright (c) 2025 [Carlos A. Pinheiro de Sousa / University of Konstanz]
+ * Copyright (c) 2025 [Carlos Pinheiro / University of Konstanz]
  *
  * This file is part of GLidE-SLAM and is provided under a PROPRIETARY LICENSE.
  * Unlike other parts of this project (licensed under GPL-3.0), this file may NOT be:
@@ -966,7 +966,8 @@ private:
 
     GLideSettings* m_GPUEngineSettings{nullptr};
 
-    struct TrackResult {
+    struct TrackResult
+    {
         uint32_t frameID{0};
         cv::Mat pose;
         float chi2{0.0f};
@@ -974,7 +975,7 @@ private:
         bool success{false};
         bool ready{false};
         std::mutex mutex;
-        std::condition_variable cv;
+        std::condition_variable resultReady;
     } m_gpuTrackResult;
 
 
@@ -1308,9 +1309,7 @@ private:
 
     GLideSettings *m_GPUEngineSettings{NULL};
 
-    std::mutex mMutexUpdate;
-    std::condition_variable m_cv;
-    std::mutex m_viewerMutex;
+    std::mutex m_stateMutex;
     std::atomic<bool> m_stop{false};
 
     //for debugging
@@ -1336,6 +1335,8 @@ private:
     cv::Mat m_sourceImage;
     uint32_t m_sourceFrameID{0};
     bool m_directTrackDataAvailable{false};
+    std::condition_variable m_newFrameReady;
+
 
     //in GLSL SSBO (std430) alignment uses 16-byte vec4
     std::vector<glm::vec4> m_slamMapPoints;
