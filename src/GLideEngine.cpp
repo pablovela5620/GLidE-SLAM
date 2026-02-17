@@ -622,13 +622,13 @@ bool GLideCompute::initializeTrack()
 
     m_trackCache.resize(m_nLevels);
 
-    glGenBuffers(1, &m_ssbo_Pose);
-    if (m_ssbo_Pose == 0)
+    glGenBuffers(1, &m_ssbo_PoseTrack);
+    if (m_ssbo_PoseTrack == 0)
     {
         Logger::LogError("Error at SSBOs generation; initializeTrack.");
         return false;
     }
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssbo_Pose);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssbo_PoseTrack);
     glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(glm::mat4)), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -643,6 +643,7 @@ bool GLideCompute::initializeTrack()
         glGenBuffers(1,&cacheLevel.ssbo_Chi2);
         glGenBuffers(1,&cacheLevel.ssbo_isValid);
         glGenBuffers(1,&cacheLevel.ssbo_Align);
+        glGenBuffers(1,&cacheLevel.ssbo_State);
 
         glGenBuffers(1,&cacheLevel.ssbo_B0Level);
         glGenBuffers(1,&cacheLevel.ssbo_B1Level);
@@ -655,6 +656,7 @@ bool GLideCompute::initializeTrack()
             || cacheLevel.ssbo_Chi2 == 0
             || cacheLevel.ssbo_isValid == 0
             || cacheLevel.ssbo_Align == 0
+            || cacheLevel.ssbo_State == 0
 
             || cacheLevel.ssbo_B0Level == 0
             || cacheLevel.ssbo_B1Level == 0
@@ -684,7 +686,11 @@ bool GLideCompute::initializeTrack()
 
         //Align, vec4 (keeps du,dv, valid) for each point
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Align);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);        //Align, vec4 (keeps du,dv, valid) for each point
+
+        //State block several state variables used during iterations/levels
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_State);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(TrackStateBlock)), nullptr, GL_DYNAMIC_DRAW);
 
 
         //buffer allocation used in reduction shader
@@ -760,12 +766,19 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         for (size_t c = 0; c < 4; ++c)
             m[c*4 + r] = Tcw.at<float>(r, c);
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssbo_Pose);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ssbo_PoseTrack);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(m), m);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, TRACK_INOUT_POSE, m_ssbo_Pose);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, TRACK_INOUT_POSE, m_ssbo_PoseTrack);
 
 
+    //Track state cache needs to be cleared at each call of track (all levels)
+    for (int L = m_nLevels-1; L >= 0; --L)
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[L].ssbo_State);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(TrackStateBlock), &m_trackSateData);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
 
     //write to shader uniforms
     //uLevel and uK uniforms are level-dependent, so they are set in loop
@@ -835,6 +848,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             //     for (int c = 0; c < 4; ++c)
             //         glmPose[c][r] = Tcw.at<float>(r,c);
 
+            //************************************ TRACK SHADER ************************************
             //uniforms per iteration
             //glUniformMatrix4fv(m_uPoseTrack, 1, GL_FALSE, &glmPose[0][0]);
             glUniform1i(m_uLevelTrack, L);
@@ -869,12 +883,14 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
 
             //READ/WRITE
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_INOUT_ALIGN,m_trackCache[L].ssbo_Align);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_INOUT_POSE,m_ssbo_Pose);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_INOUT_POSE,m_ssbo_PoseTrack);
+
 
             //Dispatch
             glDispatchCompute((GLuint)((m_nPoints + 63u) / 64u), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+            //************************************ REDUCTION SHADER ************************************
             //clearTrackReduction(L);
 
             glUseProgram(m_red1TrackShader);
@@ -896,9 +912,19 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             glDispatchCompute(1,1,1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+
+
+            //************************************ SOLVE SHADER ************************************
+            glUseProgram(m_solveTrackShader);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_STATE,m_trackCache[L].ssbo_State);
+
+
+            glDispatchCompute(1,1,1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+
+            //Make sure to set the track shader again for next iteration
             glUseProgram(m_trackShader);
-
-
 
             //in same iteration, readback
             glm::vec4 b0(0,0,0,0), b1(0,0,0,0);

@@ -1008,7 +1008,7 @@ private:
     GLint m_uReduce1PreCompute{-1};
     GLint m_uReduce2PreCompute{-1};
 
-    //cache/data that is stored per level
+    //preCompute cache/data that is stored per level
     struct PreComputeCache
     {
         GLuint ssbo_isValid= 0; // uint[N]
@@ -1042,8 +1042,10 @@ private:
     GLint m_uMaxShiftTrack{-1};
     GLint m_uHumberKTrack{-1};
 
+    //track reduce uniform locations
     GLint m_uNpointsReduce1Track{-1};
 
+    //track solve uniform locations
     GLint m_uPatchSizeSolveTrack{-1};
     GLint m_MinMeasurementsSolveTrack{-1};
     GLint m_EpsNorm{-1};
@@ -1051,8 +1053,10 @@ private:
 
 
     //track shader shader storage buffer objects
-    GLuint m_ssbo_Pose = 0;
-    //cache/data that is stored per level
+    GLuint m_ssbo_PoseTrack = 0;
+
+
+    //track cache/data that is stored per level
     struct TrackCache
     {
         GLuint ssbo_B0          = 0;   //vec4[N]
@@ -1060,6 +1064,7 @@ private:
         GLuint ssbo_Chi2        = 0;   //float[N]
         GLuint ssbo_isValid     = 0;   //uint[N]
         GLuint ssbo_Align       = 0;   //vec4[N]
+        GLuint ssbo_State       = 0;
 
         //reduction buffers for each level
         GLuint ssbo_B0Level          = 0; //vec4[1]
@@ -1069,6 +1074,29 @@ private:
 
     };
     std::vector<TrackCache> m_trackCache;
+
+
+    //track state data block set as 16 byte alignment:
+    //64 + 16 + 20 = 100 bytes.
+    //for 7 blocks of 16 bytes, pad with 3 x 4 bytes
+    struct alignas(16) TrackStateBlock
+    {
+        glm::mat4 bestPose      { glm::mat4(1.0f) }; // 64 bytes
+        float     bestChi       { std::numeric_limits<float>::max() }; //--> 4 bytes start
+        float     levelStartChi { 0.0f }; // --> 8
+        float     lastChi       { 0.0f }; // -- 12
+        float     lastDeltaNorm { 0.0f }; // --> 16 bytes total end
+        uint32_t  divergeCount  { 0u }; // --> 4 bytes start
+        uint32_t  stop          { 0u }; // --> 8
+        uint32_t  hadValid      { 0u }; // --> 12
+        uint32_t  bestValidPts  { 0u }; // --> 16
+        uint32_t  failed        { 0u }; // --> 20
+        uint32_t  _pad0         { 0u }; // --> pad with 4 bytes
+        uint32_t  _pad1         { 0u }; // --> pad with 4 bytes
+        uint32_t  _pad2         { 0u }; // --> pad with 4 bytes
+    }m_trackSateData;
+
+
 
     //trackShader SSBO binding layout
     // Inputs:
