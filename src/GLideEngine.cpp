@@ -1188,8 +1188,10 @@ bool GLideCompute::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, 
 {
     std::unique_lock<std::mutex> lock(m_gpuTrackResult.mutex);
 
-    m_gpuTrackResult.resultReady.wait(lock, [&]()
-        {return m_gpuTrackResult.ready && (m_gpuTrackResult.frameID == frameID);});
+    bool ready = m_gpuTrackResult.resultReady.wait_for(lock,
+            std::chrono::milliseconds(10), [&]()
+            { return m_gpuTrackResult.ready && (m_gpuTrackResult.frameID == frameID); });
+
 
     //
     // if (!m_gpuTrackResult.ready)
