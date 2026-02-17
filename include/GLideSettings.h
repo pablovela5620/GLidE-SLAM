@@ -73,6 +73,8 @@ struct GLideSettings
 		int enableAlign{0};
 		int searchRadius{3};
 		float huberK{0.08f};
+		float epsNorm{0.0001f};
+
 		glm::vec4 searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
 		glm::vec4 rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
 		glm::vec4 maxShift{0.0f, 0.0f, 0.0f, 0.0f};

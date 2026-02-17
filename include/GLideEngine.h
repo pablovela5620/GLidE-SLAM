@@ -949,6 +949,7 @@ private:
     glm::vec4 m_searchThreshold{0.0f, 0.0f, 0.0f, 0.0f};
     glm::vec4 m_rejectThreshold{0.0f, 0.0f, 0.0f, 0.0f};
     glm::vec4 m_maxShift{0.0f, 0.0f, 0.0f, 0.0f};
+    float m_epsNorm{0.0f};
 
 
     float m_scaleFactor{1.0f};

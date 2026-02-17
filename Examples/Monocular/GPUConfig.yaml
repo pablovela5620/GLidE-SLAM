@@ -43,6 +43,7 @@ DirTrackParams.maxPoints: 1024
 DirTrackParams.enableAlign: 1
 DirTrackParams.searchRadius: 3
 DirTrackParams.huberK: 0.08
+DirTrackParams.epsNorm: 0.0001;
 
 DirTrackParams.searchThreshold: [0.012,0.018,0.025,0.035]
 DirTrackParams.rejectThreshold: [0.025,0.035,0.050,0.070]
