@@ -183,6 +183,14 @@ bool GLideCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader
     //set shader uniforms (reduce track shader)
     m_uNpointsReduce1Track = glGetUniformLocation(m_red1TrackShader, "uNPoints");
 
+    //set shader uniforms (solve track shader)
+    m_uPatchSizeSolveTrack = glGetUniformLocation(m_solveTrackShader, "uPatchSize");
+    m_uIterationSolveTrack = glGetUniformLocation(m_solveTrackShader, "uIteration");
+    m_uMinMeasurementsSolveTrack = glGetUniformLocation(m_solveTrackShader, "uMinMeasurements");
+    m_uEpsNormSolveTrack = glGetUniformLocation(m_solveTrackShader, "uEpsNorm");
+    m_uIsLastIterationSolveTrack = glGetUniformLocation(m_solveTrackShader, "uIsLastIteration");
+
+
     //used for debugging (compare image pyramids)
     // Create readback SSBO (size for largest level)
     glGenBuffers(1, &m_readbackSSBO);

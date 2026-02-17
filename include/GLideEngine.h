@@ -1047,9 +1047,10 @@ private:
 
     //track solve uniform locations
     GLint m_uPatchSizeSolveTrack{-1};
-    GLint m_MinMeasurementsSolveTrack{-1};
-    GLint m_EpsNorm{-1};
     GLint m_uIterationSolveTrack{-1};
+    GLint m_uMinMeasurementsSolveTrack{-1};
+    GLint m_uEpsNormSolveTrack{-1};
+    GLint m_uIsLastIterationSolveTrack{-1};
 
 
     //track shader shader storage buffer objects
