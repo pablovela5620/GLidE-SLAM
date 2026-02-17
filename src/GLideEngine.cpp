@@ -132,7 +132,7 @@ bool GLideCompute::setShaders(const std::map<std::string, std::shared_ptr<Shader
         redPreComputeH2Shader == 0 ||
         trackShader == 0 ||
         redTrackShader == 0 ||
-        solveTrackShader)
+        solveTrackShader == 0)
     {
         return false;
     }
@@ -764,7 +764,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         logTime("FAIL");
     };
 
-    const uint32_t lastIteraion = m_maxIterations - 1;
+    const uint32_t lastIteration = m_maxIterations - 1;
 
     //start
     cv::Mat Tcw = pose.clone();
@@ -816,9 +816,6 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     //Main loop, course to fine levels
     for (int L = m_nLevels-1; L >= 0; --L)
     {
-        //one H per level, read back from SSBO (precomputed)
-        Eigen::Matrix<float,6,6> H = Eigen::Matrix<float,6,6>::Zero();
-
         for (uint32_t iteration = 0; iteration < m_maxIterations; ++iteration)
         {
             //************************************ TRACK SHADER ************************************
@@ -892,7 +889,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             glUniform1i(m_uPatchSizeSolveTrack, (GLint)m_patchSize);
             glUniform1i(m_uIterationSolveTrack, iteration);
             glUniform1i(m_uMinMeasurementsSolveTrack, (GLint)m_minMeasurements);
-            glUniform1i(m_uIsLastIterationSolveTrack, (iteration == lastIteraion) ? 1 : 0);
+            glUniform1i(m_uIsLastIterationSolveTrack, (iteration == lastIteration) ? 1 : 0);
             glUniform1f(m_uEpsNormSolveTrack, m_epsNorm);
 
             //READ

@@ -7,7 +7,7 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 uniform int   uPatchSize;
 uniform int   uIteration;
 uniform int   uMinMeasurements;   // e.g. 48
-uniform int   uIsLastIteration;        // 0/1 (CPU sets: iteration==maxIters-1)
+uniform int   uIsLastIterationation;        // 0/1 (CPU sets: iteration==maxIters-1)
 uniform float uEpsNorm;           // e.g. 1e-4
 
 // Reduced per-iteration outputs (single element)
@@ -35,6 +35,8 @@ layout(std430, binding = 15) buffer TrackStateBuffer
     uint  bestValidPts;    // validPts at bestChi
     uint  failed;          // 1 => failure (singular/NaN/too few meas)
     uint  _pad0;
+    uint  _pad1;
+    uint  _pad2;
 } state;
 
 float A6(int r, int c, float A[36]) { return A[r*6 + c]; }
@@ -161,7 +163,7 @@ void main()
     // If already stopped, just commit best on last iter (optional)
     if (state.stop != 0u)
     {
-        if (uIsLastIter != 0) poseBuf.Tcw = state.bestPose;
+        if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
         return;
     }
 
@@ -205,7 +207,7 @@ void main()
             poseBuf.Tcw = state.bestPose; // rollback
             state.stop     = 1u;
             state.hadValid = 1u;
-            if (uIsLastIter != 0) poseBuf.Tcw = state.bestPose;
+            if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
             return;
         }
     }
@@ -266,7 +268,7 @@ void main()
     if (dn < uEpsNorm) state.stop = 1u;
 
     // On last iter, force commit bestPose (matches CPU: Tcw=bestT at end of level)
-    if (uIsLastIter != 0)
+    if (uIsLastIteration != 0)
     {
         poseBuf.Tcw = state.bestPose;
         state.stop = 1u;
