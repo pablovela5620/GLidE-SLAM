@@ -686,7 +686,7 @@ namespace ORB_SLAM2
         cv::Mat Tcw = newFrame->mTcw;
 
         Logger::LogInfoIII(
-            "Direct Tracker: Frames: " + std::to_string(newFrame->mnId) + " - " + std::to_string(mpPrevDirectRefID) +
+            "CPU Direct Tracker: Frames: " + std::to_string(newFrame->mnId) + " - " + std::to_string(mpPrevDirectRefID) +
             " levels=" + std::to_string(dtCache.size()) +
             " useMotion=" + std::to_string((int) useMotion));
 
@@ -716,7 +716,7 @@ namespace ORB_SLAM2
             const cv::Mat &InewFrame = newFrame->m_pyrImg[level];
             if (InewFrame.empty())
             {
-                Logger::LogError("Direct Tracker: Could not track, I new is empty");
+                Logger::LogError("CPU Direct Tracker: Could not track, I new is empty");
                 return false;
             }
 
@@ -1188,7 +1188,7 @@ namespace ORB_SLAM2
     bool Tracking::trackPrecompute(const Frame &frame, std::vector<DirectTrackCache> &dtCache)
     {
         Logger::LogInfoIII(
-            "Direct Tracker: Precompute IC on reference frame: " + std::to_string(frame.mnId));
+            "CPU Direct Tracker: Precompute IC on reference frame: " + std::to_string(frame.mnId));
 
         //static const int nLevels = 4;
         dtCache.resize(NLEVELS_DIRECT);
@@ -1202,7 +1202,7 @@ namespace ORB_SLAM2
             const cv::Mat &Iref = frame.m_pyrImg[level];
             if (Iref.empty())
             {
-                Logger::LogError("Direct Tracker: Level " + std::to_string(level) + " image empty");
+                Logger::LogError("CPU Direct Tracker: Level " + std::to_string(level) + " image empty");
                 return false;
             }
 
@@ -1270,7 +1270,7 @@ namespace ORB_SLAM2
             if (L.pointData.size() < 20)
             {
                 Logger::LogError(
-                    "Direct Tracker: Level " + std::to_string(level) + " too few points: " + std::to_string(
+                    "CPU Direct Tracker: Level " + std::to_string(level) + " too few points: " + std::to_string(
                         L.pointData.size()));
                 return false;
             }
@@ -1784,7 +1784,7 @@ namespace ORB_SLAM2
     bool Tracking::TrackReferenceKeyFrame()
     {
         Logger::LogInfoII(
-            "Indirect Tracker: Tracking with Ref Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
+            "CPU Indirect Tracker: Tracking with Ref Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
             std::to_string(mpReferenceKF->mnFrameId));
 
         // Compute Bag of Words vector
@@ -1825,7 +1825,7 @@ namespace ORB_SLAM2
             }
         }
 
-        Logger::LogInfoII("Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
+        Logger::LogInfoII("CPU Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
 
         return nmatchesMap >= 10;
     }
@@ -1898,7 +1898,7 @@ namespace ORB_SLAM2
     bool Tracking::TrackWithMotionModel()
     {
         Logger::LogInfoII(
-            "Indirect Tracker: Tracking with motion model Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
+            "CPU Indirect Tracker: Tracking with motion model Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
             std::to_string(mLastFrame.mnId));
 
         ORBmatcher matcher(0.9, true);
@@ -1959,7 +1959,7 @@ namespace ORB_SLAM2
             return nmatches > 20;
         }
 
-        Logger::LogInfoII("Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
+        Logger::LogInfoII("CPU Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
 
         return nmatchesMap >= 10;
     }
