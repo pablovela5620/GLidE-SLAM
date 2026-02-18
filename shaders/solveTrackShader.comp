@@ -206,6 +206,8 @@ void main()
     if (uIteration == 0) state.levelStartChi = chiMean;
     state.lastChi = chiMean;
 
+    state.hadValid = 1u;
+
     mat4 poseBefore = poseBuf.Tcw;
 
     // best / diverge logic (same as your CPU)
@@ -269,8 +271,6 @@ void main()
     }
     dn = sqrt(dn);
     state.lastDeltaNorm = dn;
-
-    state.hadValid = 1u;
 
     // Your ordering: xi = [delta(3..5), delta(0..2)]
     vec3 w = vec3(delta[3], delta[4], delta[5]); // omega
