@@ -1194,13 +1194,6 @@ public:
     bool setActiveCamera(std::shared_ptr<Camera> camera);
     void setMatrices();
 
-    void debugGetComputeShaderTime()
-    {
-        if (m_computeShader_done) { std::cout << "time: " << std::to_string(m_computeShader_dtAvg) << std::endl; }
-    }
-
-    bool checkPause(){return m_pauseSimulation.load();}
-    void setPause() {m_pauseSimulation.store(true);}
     void setScaleFactor(const float scale) { m_scaleFactor = scale; }
 
     void updateNewFrame(uint32_t frameID, const cv::Mat& image, const cv::Mat& pose);
@@ -1227,6 +1220,10 @@ private:
     void onWindow(const UIEvent& e);
     void setEventCallback(std::function<void(const UIEvent &)> callback) {m_windowData.callback = callback;}
     void ensureWindowContext(EGLDisplay display, EGLSurface surface, EGLContext context);
+
+    //for debugging
+    bool logTiming(const std::string& text);
+
 private:
 
     ORB_SLAM2::System* m_system{nullptr};
@@ -1312,12 +1309,6 @@ private:
     std::mutex m_stateMutex;
     std::atomic<bool> m_stop{false};
 
-    //for debugging
-    double m_computeShader_dtAvg{0.0};
-    double m_computeShader_total{0.0};
-    uint32_t m_computeShader_nSamples{0};
-    std::atomic<bool> m_computeShader_done{false};
-
     GuiWindow::WindowData m_windowData{};
 
     //timing variables (delta time, FPS)
@@ -1343,11 +1334,11 @@ private:
     cv::Mat m_initialPose;
     bool m_runPrecompute{false};
 
-
-
-    //Compute Shaders (Image Processing)
+    //Compute module
     GLideCompute* m_gpuCompute{nullptr};
 
+    //log timings (to file) for debugging:
+    bool m_logTiming{false};
 
 
 };

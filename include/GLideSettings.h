@@ -23,6 +23,7 @@ struct GLideSettings
     {
 	    int forceOriginStart{1};
 	    int runViewer{1};
+		int logTiming{0};
 
     	int width{640};
     	int height{480};

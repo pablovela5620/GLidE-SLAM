@@ -2200,6 +2200,22 @@ void GLideEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EG
     }
 }
 
+bool GLideEngine::logTiming(const std::string& text)
+{
+    std::string path = "./gpuTimings.csv";
+    std::fstream f;
+    f.open(path, std::ios::out|std::ios::app);
+    if (!f)
+    {
+        Logger::LogError("Could not open file: " + path );
+        return false;
+    }
+
+
+
+    f.close();
+}
+
 void GLideEngine::exit()
 {
     shutdown();
