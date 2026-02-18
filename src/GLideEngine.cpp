@@ -530,8 +530,6 @@ bool GLideCompute::initializePreCompute()
 
 bool GLideCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv::Mat &pose)
 {
-    auto preComputeStartTime = std::chrono::high_resolution_clock::now();
-
     if (m_ssboMapPoints == 0) return false;
     if (mapPoints.empty() || mapPoints.size() > m_maxPoints) return false;
     if (m_nLevels == 0) return false;
@@ -632,9 +630,6 @@ bool GLideCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv:
     glFinish();
 #endif
 
-    auto preComputeEndTime = std::chrono::high_resolution_clock::now();
-    float trackMs = std::chrono::duration<float, std::milli>(preComputeEndTime - preComputeStartTime).count();
-    Logger::LogInfoIII("GPU preCompute(): "   + std::to_string(trackMs) + " ms");
     return true;
 }
 
@@ -739,20 +734,6 @@ bool GLideCompute::initializeTrack()
 
 bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &outN)
 {
-    //time track:
-    auto trackStart = std::chrono::high_resolution_clock::now();
-
-    auto logTime = [&](const std::string& status, float chi2Val = 0.0f) {
-        glFinish();
-        auto trackEnd = std::chrono::high_resolution_clock::now();
-        float trackMs = std::chrono::duration<float, std::milli>(trackEnd - trackStart).count();
-        if (chi2Val > 0.0f)
-            Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) +
-                               " ms, chi2=" + std::to_string(chi2Val));
-        else
-            Logger::LogInfoIII("GPU track() " + status + ": " + std::to_string(trackMs) + " ms");
-    };
-
     if (pose.empty() || pose.type() != CV_32FC1 || m_nLevels <= 0 || m_nPoints == 0 || m_nPoints > m_maxPoints)
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
@@ -763,7 +744,6 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         m_gpuTrackResult.success = false;
         m_gpuTrackResult.ready = true;
         m_gpuTrackResult.resultReady.notify_one();
-        logTime("EARLY_FAIL");
         return false;
     }
 
@@ -779,7 +759,6 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             m_gpuTrackResult.ready = true;
         }
         m_gpuTrackResult.resultReady.notify_one();
-        logTime("FAIL");
     };
 
     const uint32_t lastIteration = m_maxIterations - 1;
@@ -970,7 +949,6 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     }
     m_gpuTrackResult.resultReady.notify_one();
 
-    logTime(anyLevelOk ? "SUCCESS" : "FAIL", outChi2);
     return anyLevelOk;
 }
 
@@ -1418,16 +1396,54 @@ void GLideEngine::updateDirectTracking()
     //first step (either precompute/direct tracking, build image pyramids)
     if (!img.empty())
     {
-        m_gpuCompute->buildPyramid(img);
+        //for normal cases
+        if (!m_logTiming)
+            m_gpuCompute->buildPyramid(img);
+        else //otherwise debug timings to file
+        {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            m_gpuCompute->buildPyramid(img);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
+            std::string fileContent = "imagePyramid," + std::to_string(frameID) + "," + std::to_string(dt);
+            logTiming(fileContent);
+        }
+
+
     }
 
     if (doPrecompute)
     {
-        m_gpuCompute->preCompute(pts, pose);
+        //for normal cases
+        if (!m_logTiming)
+            m_gpuCompute->preCompute(pts, pose);
+        else //otherwise debug timings to file
+        {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            m_gpuCompute->preCompute(pts, pose);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
+            std::string fileContent = "preCompute," + std::to_string(frameID) + "," + std::to_string(dt);
+            logTiming(fileContent);
+        }
+
     }
     else if (doTrack)
     {
-        m_gpuCompute->track(frameID, pose,outChi2,outN);
+        //for normal cases
+        if (!m_logTiming)
+            m_gpuCompute->track(frameID, pose,outChi2,outN);
+        else //otherwise debug timings to file
+        {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            bool ok = m_gpuCompute->track(frameID, pose,outChi2,outN);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
+            std::string fileContent =
+                "track," + std::to_string(frameID) + "," + std::to_string(dt) + "," +
+                std::to_string(outChi2) + "," + (ok ? "1" : "0");
+            logTiming(fileContent);
+        }
     }
 }
 
@@ -2233,7 +2249,7 @@ bool GLideEngine::logTiming(const std::string& text)
 
     if (!m_logTimingCreated)
     {
-        f << "function,time_ms\n";
+        f << "function,frame,time_ms\n";
         m_logTimingCreated = true;
     }
 
