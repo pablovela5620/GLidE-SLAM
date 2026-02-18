@@ -1403,12 +1403,10 @@ void GLideEngine::updateDirectTracking()
 
     if (doPrecompute)
     {
-        Logger::LogInfoI("GPUEngine: Calling preCompute.");
         m_gpuCompute->preCompute(pts, pose);
     }
     else if (doTrack)
     {
-        Logger::LogInfoI("GPUEngine: Calling track.");
         m_gpuCompute->track(frameID, pose,outChi2,outN);
     }
 }
@@ -1419,8 +1417,6 @@ void GLideEngine::updateNewFrame(uint32_t frameID, const cv::Mat &image, const c
         return;
 
     {
-        Logger::LogInfoI("GPUEngine: updating new frame.");
-
         std::unique_lock<std::mutex> lock(m_directTrackingMutex);
 
         m_newFrameReady.wait(lock, [&]()
@@ -1442,7 +1438,6 @@ void GLideEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> ma
     if (!m_isInitialized || m_gpuCompute== nullptr)
         return;
     {
-        Logger::LogInfoI("GPUEngine: updating ref frame.");
         std::unique_lock<std::mutex> lock(m_directTrackingMutex);
 
         // wait until slot is free
@@ -2476,12 +2471,12 @@ bool Shader::link()
 {
     if (m_isLinked)
     {
-        std::cout << "Shader program has already been linked!" << std::endl;
+        Logger::LogInfoI("Shader program has already been linked!");
         return false;
     }
     if (m_shaderProgram <= 0)
     {
-        std::cout << "Link error: Shader program has not been created!" << std::endl;
+        Logger::LogError("Link error: Shader program has not been created!");
         return false;
     }
 
@@ -2503,7 +2498,7 @@ bool Shader::link()
         GLchar *strInfoLog = new GLchar[infoLogLength + 1];
         glGetProgramInfoLog(m_shaderProgram, infoLogLength, NULL, strInfoLog);
         fprintf(stderr, "Linker failure: %s\n", strInfoLog);
-        std::cout << strInfoLog << std::endl;
+        Logger::LogError(strInfoLog);
         delete[] strInfoLog;
         if (!m_shaderName.empty())
             Logger::LogError(m_shaderName + " shader linking failed!");
@@ -2532,11 +2527,11 @@ std::string Shader::readFile(const std::string &path)
     f.open(path, std::ios::in);
     if (!f)
     {
-        std::cout << "Error! File not found or could not be opened! " + path << std::endl;
+        Logger::LogError("Error! File not found or could not be opened! " + path );
         return "";
     } else
     {
-        std::cout << "Shader File found: " + path << std::endl;
+        Logger::LogError("Shader File found: " + path);
     }
 
 
@@ -2570,7 +2565,7 @@ bool Shader::compile(GLenum shaderType, const std::string &shaderSrcFile)
         m_shaderProgram = glCreateProgram();
         if (m_shaderProgram == 0)
         {
-            std::cout << "Unable to create shader program." << std::endl;
+            Logger::LogError("Unable to create shader program.");
         }
         return false;
     }
@@ -2604,7 +2599,7 @@ bool Shader::compile(GLenum shaderType, const std::string &shaderSrcFile)
         fprintf(stderr, "Compile failure in %s shader:\n%s\n", strShaderType, strInfoLog);
         delete[] strInfoLog;
 
-        std::cout << "Compile failure in" + std::string(strShaderType) + "in shader: " + strInfoLog << std::endl;
+        Logger::LogError("Compile failure in" + std::string(strShaderType) + "in shader: " + strInfoLog );
 
         return false;
     }
