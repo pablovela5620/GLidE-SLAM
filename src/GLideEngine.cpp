@@ -944,9 +944,12 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     outN = int(trackStateResult.bestValidPts) * m_patchArea;
     anyLevelOk = (trackStateResult.failed == 0u) && (trackStateResult.hadValid != 0u);
     anyAccepted = (trackStateResult.anyAccepted != 0u);
+    bool ok = (trackStateResult.failed == 0u) &&
+              anyAccepted &&
+              (trackStateResult.bestChi <= 0.0045f);
 
-    if (anyLevelOk && outChi2 > 0.0045f && anyAccepted)
-        anyLevelOk = false;
+    anyLevelOk = ok;
+
 
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);

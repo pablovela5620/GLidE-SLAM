@@ -225,9 +225,9 @@ void main()
             poseBuf.Tcw = state.bestPose; // rollback
             state.stop     = 1u;
             if (state.hadValid != 0u)
-                gstate.anyAccepted = 1u;
+            gstate.anyAccepted = 1u;
 
-            if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
+            //if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
             return;
         }
     }
@@ -289,6 +289,7 @@ void main()
     {
         state.stop = 1u;
         gstate.anyAccepted = 1u;
+        return;
     }
 
     // On last iter, force commit bestPose (matches CPU: Tcw=bestT at end of level)
