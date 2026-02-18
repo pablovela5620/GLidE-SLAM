@@ -222,12 +222,10 @@ void main()
         state.divergeCount++;
         if (state.divergeCount >= 3u)
         {
-            state.stop = 1u;
+            poseBuf.Tcw = state.bestPose; // rollback
+            state.stop     = 1u;
             if (state.hadValid != 0u)
-            {
-                poseBuf.Tcw = state.bestPose;
-                gstate.anyAccepted = 1u;
-            }
+            gstate.anyAccepted = 1u;
             return;
         }
     }
