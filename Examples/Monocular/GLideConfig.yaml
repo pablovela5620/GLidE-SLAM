@@ -3,12 +3,12 @@
 #--------------------------------------------------------------------------------------------
 # viewer Parameters
 #--------------------------------------------------------------------------------------------
-Viewer.runViewer: 1
+Viewer.displayWindow: 1
 Viewer.logTiming: 1
 Viewer.width: 1024
 Viewer.height: 768
 Viewer.scaleFactor: 1
-Viewer.cameraFollow: 0
+Viewer.cameraFollow: 1
 Viewer.followDistance: 10
 
 Viewer.currentKeyFrameColor: [0.0,1.0,0.0]

@@ -927,6 +927,8 @@ private:
     bool readSSBO(GLuint ssbo, void* destination,size_t numBytes);
     bool rebuildH(Eigen::Matrix<float,6,6>& H, const float* hTemp);
     cv::Matx44f se3exp(const cv::Matx<float,6,1>& xi);
+public:
+    bool m_gpuBusy{false};
 
 private:
 
@@ -1094,7 +1096,7 @@ private:
         uint32_t  hadValid      { 0u }; // --> 12
         uint32_t  bestValidPts  { 0u }; // --> 16
         uint32_t  failed        { 0u }; // --> 20
-        uint32_t  _pad0         { 0u }; // --> pad with 4 bytes
+        uint32_t  anyAccepted   { 0u }; // --> 24 (offset 100 bytes)
         uint32_t  _pad1         { 0u }; // --> pad with 4 bytes
         uint32_t  _pad2         { 0u }; // --> pad with 4 bytes
     }m_trackSateData;
@@ -1139,6 +1141,9 @@ private:
 
     static const GLuint SOLVE_IN_HLEVEL     {14}; // float[21] (packed symmetric)
     static const GLuint SOLVE_INOUT_STATE   {15}; // TrackState (bestChi, divergeCount, bestPose, etc.)
+
+    static const GLuint SOLVE_INOUT_ACCEPTED{16}; // write only to level 0 of state buffer
+
     static const GLuint SOLVE_INOUT_POSE    {18}; // mat4 (your pose SSBO)
 
     GLuint m_ssboMapPoints{0};

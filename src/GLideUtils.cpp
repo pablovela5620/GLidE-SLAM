@@ -59,7 +59,7 @@ bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GLideSet
 
 
     //read in viewer slamSettings
-    GLideSettings->gpuEngineParams.runViewer = fs["Viewer.runViewer"];
+    GLideSettings->gpuEngineParams.runViewer = fs["Viewer.displayWindow"];
     GLideSettings->gpuEngineParams.logTiming = fs["Viewer.logTiming"];
     GLideSettings->gpuEngineParams.width = fs["Viewer.width"];
     GLideSettings->gpuEngineParams.height = fs["Viewer.height"];

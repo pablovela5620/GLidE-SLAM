@@ -34,10 +34,28 @@ layout(std430, binding = 15) buffer TrackStateBuffer
     uint  hadValid;        // 1 => at least one valid iter happened
     uint  bestValidPts;    // validPts at bestChi
     uint  failed;          // 1 => failure (singular/NaN/too few meas)
-    uint  _pad0;
+    uint  anyAccepted;
     uint  _pad1;
     uint  _pad2;
 } state;
+
+layout(std430, binding = 16) buffer TrackGlobalStateBuffer
+{
+    mat4  bestPose;
+    float bestChi;
+    float levelStartChi;
+    float lastChi;
+    float lastDeltaNorm;
+    uint  divergeCount;
+    uint  stop;
+    uint  hadValid;
+    uint  bestValidPts;
+    uint  failed;
+    uint  anyAccepted;
+    uint  _pad1;
+    uint  _pad2;
+} gstate;
+
 
 float A6(int r, int c, float A[36]) { return A[r*6 + c]; }
 void  SA6(int r, int c, float v, inout float A[36]) { A[r*6 + c] = v; }
@@ -206,7 +224,9 @@ void main()
         {
             poseBuf.Tcw = state.bestPose; // rollback
             state.stop     = 1u;
-            state.hadValid = 1u;
+            if (state.hadValid != 0u)
+                gstate.anyAccepted = 1u;
+
             if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
             return;
         }
@@ -265,7 +285,11 @@ void main()
     // Match your current GPU code: Tcw = Tcw * se3exp(xi)
     poseBuf.Tcw = poseBuf.Tcw * dT;
 
-    if (dn < uEpsNorm) state.stop = 1u;
+    if (dn < uEpsNorm)
+    {
+        state.stop = 1u;
+        gstate.anyAccepted = 1u;
+    }
 
     // On last iter, force commit bestPose (matches CPU: Tcw=bestT at end of level)
     if (uIsLastIteration != 0)

@@ -795,7 +795,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
 
     float finalChi2Mean = std::numeric_limits<float>::max();
     bool anyLevelOk = false;
-
+    bool anyAccepted = false;
 
     glUseProgram(m_trackShader);
     //uniforms independent of iteration/Level
@@ -898,6 +898,12 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_HLEVEL,m_preComputeCache[L].ssbo_HLevel);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_STATE,m_trackCache[L].ssbo_State);
+
+            //exception, always write to level 0
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_ACCEPTED,m_trackCache[0].ssbo_State);
+
+
+
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_POSE,m_ssbo_PoseTrack);
 
 
@@ -937,6 +943,10 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     outChi2 = trackStateResult.bestChi;
     outN = int(trackStateResult.bestValidPts) * m_patchArea;
     anyLevelOk = (trackStateResult.failed == 0u) && (trackStateResult.hadValid != 0u);
+    anyAccepted = (trackStateResult.anyAccepted != 0u);
+
+    if (anyLevelOk && outChi2 > 0.0045f && anyAccepted)
+        anyLevelOk = false;
 
     {
         std::lock_guard<std::mutex> lock(m_gpuTrackResult.mutex);
@@ -1388,10 +1398,10 @@ void GLideEngine::updateDirectTracking()
                 doTrack = true;
             }
             m_directTrackDataAvailable = false;
+            m_gpuCompute->m_gpuBusy = true;
         }
     }
 
-    m_newFrameReady.notify_all();
 
 
     //first step (either precompute/direct tracking, build image pyramids)
@@ -1449,6 +1459,9 @@ void GLideEngine::updateDirectTracking()
             logTiming(fileContent);
         }
     }
+    m_gpuCompute->m_gpuBusy = false;
+    m_newFrameReady.notify_all();
+
 }
 
 void GLideEngine::updateNewFrame(uint32_t frameID, const cv::Mat &image, const cv::Mat &pose)
@@ -1460,7 +1473,9 @@ void GLideEngine::updateNewFrame(uint32_t frameID, const cv::Mat &image, const c
         std::unique_lock<std::mutex> lock(m_directTrackingMutex);
 
         m_newFrameReady.wait(lock, [&]()
-            {return (!m_directTrackDataAvailable && !m_runPrecompute) || m_stop.load();});
+        {
+            return (!m_directTrackDataAvailable && ! m_gpuCompute->m_gpuBusy) || m_stop.load();
+        });
 
         // //avoid interrupt precompute (this should not happen anyway)
         // if (m_runPrecompute)
