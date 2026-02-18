@@ -206,7 +206,6 @@ void main()
     if (uIteration == 0) state.levelStartChi = chiMean;
     state.lastChi = chiMean;
 
-    state.hadValid = 1u;
 
     mat4 poseBefore = poseBuf.Tcw;
 
@@ -223,9 +222,12 @@ void main()
         state.divergeCount++;
         if (state.divergeCount >= 3u)
         {
-            poseBuf.Tcw = state.bestPose; // rollback
-            state.stop     = 1u;
-            gstate.anyAccepted = 1u;
+            state.stop = 1u;
+            if (state.hadValid != 0u)
+            {
+                poseBuf.Tcw = state.bestPose;
+                gstate.anyAccepted = 1u;
+            }
             return;
         }
     }
@@ -271,6 +273,9 @@ void main()
     }
     dn = sqrt(dn);
     state.lastDeltaNorm = dn;
+
+    state.hadValid = 1u;
+
 
     // Your ordering: xi = [delta(3..5), delta(0..2)]
     vec3 w = vec3(delta[3], delta[4], delta[5]); // omega
