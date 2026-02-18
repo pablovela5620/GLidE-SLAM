@@ -1244,6 +1244,7 @@ bool GLideEngine::initialize()
     m_featuresMaxDepth = m_GPUEngineSettings->gpuEngineParams.featuresMaxDepth;
 
     m_featuresMaxDepth *= m_scaleFactor;
+    m_logTiming = m_GPUEngineSettings->gpuEngineParams.logTiming;
 
     initializeWindows();
     if (m_windowFrames2D == nullptr)
@@ -1319,28 +1320,28 @@ void GLideEngine::run()
         m_activeCamera->update(dt);
 
         //avoid CPU-GPU transfer every frame
-        // uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
-        // if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
-        // {
-        //     ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
-        //     updateMapPoints();
-        // }
-        //
-        // uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
-        // if (ma_LastFramesUpdateNumber != framesUpdateNumber)
-        // {
-        //     ma_LastFramesUpdateNumber = framesUpdateNumber;
-        //     updateFrames3D();
-        // }
-        //
-        // if(checkUpdateFramesFlag())
-        // {
-        //     //updateDirectMapping();
-        // }
+          uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
+          if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
+          {
+              ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
+              updateMapPoints();
+          }
+
+          uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
+          if (ma_LastFramesUpdateNumber != framesUpdateNumber)
+          {
+              ma_LastFramesUpdateNumber = framesUpdateNumber;
+              updateFrames3D();
+          }
+
+          // if(checkUpdateFramesFlag())
+          // {
+          //     //updateDirectMapping();
+          // }
 
         updateDirectTracking();
 
-       // render();
+        render();
 
         //get framerate (this is from viewer only!)
         float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
@@ -1403,6 +1404,7 @@ void GLideEngine::updateDirectTracking()
         {
             auto t0 = std::chrono::high_resolution_clock::now();
             m_gpuCompute->buildPyramid(img);
+            glFinish();
             auto t1 = std::chrono::high_resolution_clock::now();
             float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
             std::string fileContent = "imagePyramid," + std::to_string(frameID) + "," + std::to_string(dt);
@@ -1421,6 +1423,7 @@ void GLideEngine::updateDirectTracking()
         {
             auto t0 = std::chrono::high_resolution_clock::now();
             m_gpuCompute->preCompute(pts, pose);
+            glFinish();
             auto t1 = std::chrono::high_resolution_clock::now();
             float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
             std::string fileContent = "preCompute," + std::to_string(frameID) + "," + std::to_string(dt);
@@ -1437,6 +1440,7 @@ void GLideEngine::updateDirectTracking()
         {
             auto t0 = std::chrono::high_resolution_clock::now();
             bool ok = m_gpuCompute->track(frameID, pose,outChi2,outN);
+
             auto t1 = std::chrono::high_resolution_clock::now();
             float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
             std::string fileContent =
@@ -2238,19 +2242,26 @@ void GLideEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EG
 
 bool GLideEngine::logTiming(const std::string& text)
 {
-    const std::string path = "./gpuTimings.csv";
-    std::fstream f(path, std::ios::out | std::ios::app);
+    const std::string path = "gpuTimings.csv";
 
+    if (!m_logTimingCreated)
+    {
+        std::ofstream init(path, std::ios::out | std::ios::trunc);
+        if (!init.is_open())
+        {
+            Logger::LogError("Could not create/clear file: " + path);
+            return false;
+        }
+        init << "function,frame,time_ms\n";
+        init.close();
+        m_logTimingCreated = true;
+    }
+
+    std::ofstream f(path, std::ios::out | std::ios::app);
     if (!f.is_open())
     {
         Logger::LogError("Could not open file: " + path);
         return false;
-    }
-
-    if (!m_logTimingCreated)
-    {
-        f << "function,frame,time_ms\n";
-        m_logTimingCreated = true;
     }
 
     f << text << "\n";

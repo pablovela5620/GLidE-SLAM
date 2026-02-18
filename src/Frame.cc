@@ -23,6 +23,8 @@
 #include "ORBmatcher.h"
 #include <thread>
 
+#include "GLideUtils.h"
+
 namespace ORB_SLAM2
 {
 
@@ -67,13 +69,16 @@ FrameDirect::FrameDirect(const cv::Mat &imGray, const double &timeStamp, cv::Mat
     m_pyrImg[0]    = gray32f;
 
     //build image pyramids
+    auto t0 = std::chrono::high_resolution_clock::now();
     for (int L = 1; L < mnLevels; ++L)
     {
         cv::Mat smoothed;
         cv::GaussianBlur(m_pyrImg[L-1], smoothed, cv::Size(5,5), 1.0, 1.0, cv::BORDER_REFLECT101);
         cv::resize(smoothed,m_pyrImg[L],cv::Size(),1.0 / SCALE_FACTOR,1.0 / SCALE_FACTOR,cv::INTER_LINEAR);
     }
-
+    auto t1 = std::chrono::high_resolution_clock::now();
+    float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    Logger::LogInfoI("pyramid:" + std::to_string(dt));
     // ORB extraction
     //mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
     // Flag to identify outlier associations.
