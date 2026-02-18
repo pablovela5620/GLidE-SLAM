@@ -178,10 +178,9 @@ void main()
 {
     if (state.failed != 0u) return;
 
-    // If already stopped, just commit best on last iter (optional)
+    // If already stopped, just return (don't modify pose)
     if (state.stop != 0u)
     {
-        if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
         return;
     }
 
@@ -227,7 +226,6 @@ void main()
             if (state.hadValid != 0u)
             gstate.anyAccepted = 1u;
 
-            //if (uIsLastIteration != 0) poseBuf.Tcw = state.bestPose;
             return;
         }
     }
@@ -295,7 +293,11 @@ void main()
     // On last iter, force commit bestPose (matches CPU: Tcw=bestT at end of level)
     if (uIsLastIteration != 0)
     {
-        poseBuf.Tcw = state.bestPose;
+        if (state.hadValid != 0u)
+        {
+            poseBuf.Tcw = state.bestPose;
+            gstate.anyAccepted = 1u;
+        }
         state.stop = 1u;
     }
 }
