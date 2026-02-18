@@ -223,9 +223,7 @@ void main()
         {
             poseBuf.Tcw = state.bestPose; // rollback
             state.stop     = 1u;
-            if (state.hadValid != 0u)
             gstate.anyAccepted = 1u;
-
             return;
         }
     }
@@ -296,8 +294,8 @@ void main()
         if (state.hadValid != 0u)
         {
             poseBuf.Tcw = state.bestPose;
-            gstate.anyAccepted = 1u;
         }
         state.stop = 1u;
+        return;
     }
 }
