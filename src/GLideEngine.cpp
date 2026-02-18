@@ -21,26 +21,26 @@
 bool GLideCompute::initialize()
 {
     //TODO: Take all from gpuEngineSettings
-    m_width = m_GPUEngineSettings->directTrackParams.width;
-    m_height = m_GPUEngineSettings->directTrackParams.height;
-    m_nLevels = m_GPUEngineSettings->directTrackParams.nLevels;
-    m_patchSize = m_GPUEngineSettings->directTrackParams.patchSize;
+    m_width = m_GLideSettings->directTrackParams.width;
+    m_height = m_GLideSettings->directTrackParams.height;
+    m_nLevels = m_GLideSettings->directTrackParams.nLevels;
+    m_patchSize = m_GLideSettings->directTrackParams.patchSize;
     m_patchCenter = static_cast<float>((m_patchSize - 1)) * 0.5f;
     m_patchArea = m_patchSize * m_patchSize;
-    m_scaleFactor = m_GPUEngineSettings->directTrackParams.scaleFactor;
-    m_fx = m_GPUEngineSettings->directTrackParams.fx;
-    m_fy = m_GPUEngineSettings->directTrackParams.fy;
-    m_cx = m_GPUEngineSettings->directTrackParams.cx;
-    m_cy = m_GPUEngineSettings->directTrackParams.cy;
+    m_scaleFactor = m_GLideSettings->directTrackParams.scaleFactor;
+    m_fx = m_GLideSettings->directTrackParams.fx;
+    m_fy = m_GLideSettings->directTrackParams.fy;
+    m_cx = m_GLideSettings->directTrackParams.cx;
+    m_cy = m_GLideSettings->directTrackParams.cy;
 
-    m_enableAlign = m_GPUEngineSettings->directTrackParams.enableAlign;
-    m_searchRadius = m_GPUEngineSettings->directTrackParams.searchRadius;
-    m_humberK = m_GPUEngineSettings->directTrackParams.huberK;
+    m_enableAlign = m_GLideSettings->directTrackParams.enableAlign;
+    m_searchRadius = m_GLideSettings->directTrackParams.searchRadius;
+    m_humberK = m_GLideSettings->directTrackParams.huberK;
 
     // Per-level thresholds
-    m_searchThreshold = m_GPUEngineSettings->directTrackParams.searchThreshold;
-    m_rejectThreshold = m_GPUEngineSettings->directTrackParams.rejectThreshold;
-    m_maxShift = m_GPUEngineSettings->directTrackParams.maxShift;
+    m_searchThreshold = m_GLideSettings->directTrackParams.searchThreshold;
+    m_rejectThreshold = m_GLideSettings->directTrackParams.rejectThreshold;
+    m_maxShift = m_GLideSettings->directTrackParams.maxShift;
 
     m_invScaleFactors.resize(m_nLevels);
     m_invScaleFactors[0] = 1.0f;
@@ -296,8 +296,11 @@ bool GLideCompute::buildPyramid( cv::Mat& image)
                     GL_RED,
                     GL_UNSIGNED_BYTE,
                     image.ptr<uchar>());
+
+#if GLIDE_DEBUG_GL_ERRORS
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) std::cout << "texSubImage err: 0x" << std::hex << err << std::dec << std::endl;
+#endif
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -315,8 +318,10 @@ bool GLideCompute::buildPyramid( cv::Mat& image)
     //dispatch compute shader (16, 16, 1 workgroups), threads: (16*16, total threads)
     glDispatchCompute(ceilDiv(m_levelWidth[0], 16), ceilDiv(m_levelHeight[0], 16), 1);
 
-    err = glGetError();
+#if GLIDE_DEBUG_GL_ERRORS
+    GLenum err = glGetError();
     if (err != GL_NO_ERROR) std::cout << "convert err: 0x" << std::hex << err << std::dec << std::endl;
+#endif
 
     //Finish and commit all image writes done by previous compute work: wait until image is fully written pyramid [0]
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
@@ -337,8 +342,10 @@ bool GLideCompute::buildPyramid( cv::Mat& image)
         glBindImageTexture(1, m_tempTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
 
-        err = glGetError();
+#if GLIDE_DEBUG_GL_ERRORS
+        GLenum err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "L" << L << " gaussV err: 0x" << std::hex << err << std::dec << std::endl;
+#endif
 
         //wait until previouc compute work is done
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
@@ -351,8 +358,10 @@ bool GLideCompute::buildPyramid( cv::Mat& image)
         glBindImageTexture(1, m_blurTexHandles[L - 1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(srcW, 16), ceilDiv(srcH, 16), 1);
 
-        err = glGetError();
+#if GLIDE_DEBUG_GL_ERRORS
+        GLenum err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "L" << L << " gaussH err: 0x" << std::hex << err << std::dec << std::endl;
+#endif
 
         //wait until previouc compute work is done
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
@@ -365,8 +374,10 @@ bool GLideCompute::buildPyramid( cv::Mat& image)
         glBindImageTexture(1, m_pyrTexHandles[L],      0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glDispatchCompute(ceilDiv(dstW, 16), ceilDiv(dstH, 16), 1);
 
-        err = glGetError();
+#if GLIDE_DEBUG_GL_ERRORS
+        GLenum err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "L" << L << " resize err: 0x" << std::hex << err << std::dec << std::endl;
+#endif
 
         //wait until previouc compute work is done
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
@@ -616,8 +627,10 @@ bool GLideCompute::preCompute(const std::vector<glm::vec4> &mapPoints, const cv:
     glUseProgram(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
+#if GLIDE_DEBUG_GL_ERRORS
     if (glGetError() != GL_NO_ERROR) return false;
     glFinish();
+#endif
 
     auto preComputeEndTime = std::chrono::high_resolution_clock::now();
     float trackMs = std::chrono::duration<float, std::milli>(preComputeEndTime - preComputeStartTime).count();
@@ -975,7 +988,11 @@ bool GLideCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
 
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    return (glGetError() == GL_NO_ERROR);
+
+#if GLIDE_DEBUG_GL_ERRORS
+    if (glGetError() != GL_NO_ERROR) return false;
+#endif
+    return true;
 }
 
 bool GLideCompute::rebuildH(Eigen::Matrix<float, 6, 6> &H, const float* hTemp)
@@ -1162,7 +1179,10 @@ cv::Mat GLideCompute::readbackTexture(GLuint texHandle, int w, int h)
     glDispatchCompute(ceilDiv(w, 16), ceilDiv(h, 16), 1);
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+#if GLIDE_DEBUG_GL_ERRORS
     glFinish();
+#endif
 
     cv::Mat result(h, w, CV_32F, cv::Scalar(0));
 
@@ -2202,18 +2222,23 @@ void GLideEngine::ensureWindowContext(EGLDisplay display, EGLSurface surface, EG
 
 bool GLideEngine::logTiming(const std::string& text)
 {
-    std::string path = "./gpuTimings.csv";
-    std::fstream f;
-    f.open(path, std::ios::out|std::ios::app);
-    if (!f)
+    const std::string path = "./gpuTimings.csv";
+    std::fstream f(path, std::ios::out | std::ios::app);
+
+    if (!f.is_open())
     {
-        Logger::LogError("Could not open file: " + path );
+        Logger::LogError("Could not open file: " + path);
         return false;
     }
 
+    if (!m_logTimingCreated)
+    {
+        f << "function,time_ms\n";
+        m_logTimingCreated = true;
+    }
 
-
-    f.close();
+    f << text << "\n";
+    return true;
 }
 
 void GLideEngine::exit()
@@ -3033,18 +3058,30 @@ void Canvas::updateImage(const cv::Mat &image)
 
 void Canvas::render() const
 {
-    if (m_vao != 0) {
+    if (m_vao != 0)
+    {
         glDisable(GL_DEPTH_TEST);
         glBindVertexArray(m_vao);
+
+
+#if GLIDE_DEBUG_GL_ERRORS
         GLenum err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "VAO bind error: " << err << std::endl;
+#endif
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_texture);
+
+
+#if GLIDE_DEBUG_GL_ERRORS
         err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "Texture bind error: " << err << std::endl;
+#endif
         glDrawElements(GL_TRIANGLES, m_N, GL_UNSIGNED_INT, 0);
+
+#if GLIDE_DEBUG_GL_ERRORS
         err = glGetError();
         if (err != GL_NO_ERROR) std::cout << "Draw error: " << err << std::endl;
+#endif
         glBindVertexArray(0);
         glEnable(GL_DEPTH_TEST);
     }

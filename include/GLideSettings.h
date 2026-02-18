@@ -21,7 +21,6 @@ struct GLideSettings
 
 	struct GPUEngineParams
     {
-	    int forceOriginStart{1};
 	    int runViewer{1};
 		int logTiming{0};
 

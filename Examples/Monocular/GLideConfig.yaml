@@ -4,7 +4,7 @@
 # viewer Parameters
 #--------------------------------------------------------------------------------------------
 Viewer.runViewer: 1
-Viewer.forceOriginStart: 1
+Viewer.logTiming: 1
 Viewer.width: 1024
 Viewer.height: 768
 Viewer.scaleFactor: 1

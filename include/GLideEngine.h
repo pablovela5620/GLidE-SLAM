@@ -58,17 +58,8 @@
 //OpenCV
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/imgproc.hpp>
 
 //maths library
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/matrix_access.hpp>
-
-//own
-#include <oneapi/tbb/profiling.h>
-#include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -76,6 +67,10 @@
 #include "GLideSettings.h"
 #include "Map.h"
 #include "GLideUtils.h"
+
+#ifndef GLIDE_DEBUG_GL_ERRORS
+#define GLIDE_DEBUG_GL_ERRORS 0
+#endif
 
 namespace ORB_SLAM2
 {
@@ -912,7 +907,7 @@ class GLideCompute
     public:
 
     GLideCompute(){};
-    GLideCompute(GLideSettings* gpuEngineSettings) : m_GPUEngineSettings(gpuEngineSettings){};
+    GLideCompute(GLideSettings* gpuEngineSettings) : m_GLideSettings(gpuEngineSettings){};
     bool initialize();
     bool setShaders(const std::map<std::string, std::shared_ptr<Shader> >& shaders);
     bool buildPyramid( cv::Mat& image);
@@ -964,7 +959,7 @@ private:
     float m_cx{0.0f};
     float m_cy{0.0f};
 
-    GLideSettings* m_GPUEngineSettings{nullptr};
+    GLideSettings* m_GLideSettings{nullptr};
 
     struct TrackResult
     {
@@ -1339,6 +1334,7 @@ private:
 
     //log timings (to file) for debugging:
     bool m_logTiming{false};
+    bool m_logTimingCreated{false};
 
 
 };

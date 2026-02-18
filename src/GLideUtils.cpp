@@ -30,7 +30,7 @@ glm::vec4 GLideUtils::readInVector(cv::FileStorage& fs, const std::string& param
     float w = (v.size() >= 4) ? v[3] : defaultW;
     return glm::vec4(v[0], v[1], v[2], w);
 }
-bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GPUEngineSettings)
+bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GLideSettings)
 {
     cv::FileStorage fs(path, cv::FileStorage::READ);
     if (!fs.isOpened())
@@ -40,48 +40,48 @@ bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GPUEngin
     }
 
     //Direct tracking params
-    GPUEngineSettings->directTrackParams.patchSize      = fs["DirTrackParams.patchSize"];
-    GPUEngineSettings->directTrackParams.nLevels        = fs["DirTrackParams.nLevels"];
-    GPUEngineSettings->directTrackParams.scaleFactor    = fs["DirTrackParams.scaleFactor"];
+    GLideSettings->directTrackParams.patchSize      = fs["DirTrackParams.patchSize"];
+    GLideSettings->directTrackParams.nLevels        = fs["DirTrackParams.nLevels"];
+    GLideSettings->directTrackParams.scaleFactor    = fs["DirTrackParams.scaleFactor"];
 
-    GPUEngineSettings->directTrackParams.maxPoints      = fs["DirTrackParams.maxPoints"];
-    GPUEngineSettings->directTrackParams.enableAlign    = fs["DirTrackParams.enableAlign"];
-    GPUEngineSettings->directTrackParams.searchRadius   = fs["DirTrackParams.searchRadius"];
-    GPUEngineSettings->directTrackParams.huberK        = fs["DirTrackParams.huberK"];
-    GPUEngineSettings->directTrackParams.epsNorm        = fs["DirTrackParams.epsNorm"];
-    GPUEngineSettings->directTrackParams.minPoints        = fs["DirTrackParams.minPoints"];
-    GPUEngineSettings->directTrackParams.maxIterations  = fs["DirTrackParams.maxIterations"];
+    GLideSettings->directTrackParams.maxPoints      = fs["DirTrackParams.maxPoints"];
+    GLideSettings->directTrackParams.enableAlign    = fs["DirTrackParams.enableAlign"];
+    GLideSettings->directTrackParams.searchRadius   = fs["DirTrackParams.searchRadius"];
+    GLideSettings->directTrackParams.huberK        = fs["DirTrackParams.huberK"];
+    GLideSettings->directTrackParams.epsNorm        = fs["DirTrackParams.epsNorm"];
+    GLideSettings->directTrackParams.minPoints        = fs["DirTrackParams.minPoints"];
+    GLideSettings->directTrackParams.maxIterations  = fs["DirTrackParams.maxIterations"];
 
     // vec4 (per-level thresholds)
-    GPUEngineSettings->directTrackParams.searchThreshold = readInVector(fs, "DirTrackParams.searchThreshold", 0.0f);
-    GPUEngineSettings->directTrackParams.rejectThreshold = readInVector(fs, "DirTrackParams.rejectThreshold", 0.0f);
-    GPUEngineSettings->directTrackParams.maxShift        = readInVector(fs, "DirTrackParams.maxShift", 0.0f);
+    GLideSettings->directTrackParams.searchThreshold = readInVector(fs, "DirTrackParams.searchThreshold", 0.0f);
+    GLideSettings->directTrackParams.rejectThreshold = readInVector(fs, "DirTrackParams.rejectThreshold", 0.0f);
+    GLideSettings->directTrackParams.maxShift        = readInVector(fs, "DirTrackParams.maxShift", 0.0f);
 
 
     //read in viewer slamSettings
-    GPUEngineSettings->gpuEngineParams.runViewer = fs["Viewer.runViewer"];
-    GPUEngineSettings->gpuEngineParams.width = fs["Viewer.width"];
-    GPUEngineSettings->gpuEngineParams.height = fs["Viewer.height"];
-    GPUEngineSettings->gpuEngineParams.windowFramesTitle = static_cast<std::string>(fs["Viewer.windowFramesTitle"]);
-    GPUEngineSettings->gpuEngineParams.windowMapTitle = static_cast<std::string>(fs["Viewer.windowMapTitle"]);
-    GPUEngineSettings->gpuEngineParams.scaleFactor = fs["Viewer.scaleFactor"];
-    GPUEngineSettings->gpuEngineParams.camMoveFactor = fs["Viewer.mouseMoveFactor"];
-    GPUEngineSettings->gpuEngineParams.cameraFollow = fs["Viewer.cameraFollow"];
-    GPUEngineSettings->gpuEngineParams.followDistance = fs["Viewer.followDistance"];
+    GLideSettings->gpuEngineParams.runViewer = fs["Viewer.runViewer"];
+    GLideSettings->gpuEngineParams.logTiming = fs["Viewer.logTiming"];
+    GLideSettings->gpuEngineParams.width = fs["Viewer.width"];
+    GLideSettings->gpuEngineParams.height = fs["Viewer.height"];
+    GLideSettings->gpuEngineParams.windowFramesTitle = static_cast<std::string>(fs["Viewer.windowFramesTitle"]);
+    GLideSettings->gpuEngineParams.windowMapTitle = static_cast<std::string>(fs["Viewer.windowMapTitle"]);
+    GLideSettings->gpuEngineParams.scaleFactor = fs["Viewer.scaleFactor"];
+    GLideSettings->gpuEngineParams.camMoveFactor = fs["Viewer.mouseMoveFactor"];
+    GLideSettings->gpuEngineParams.cameraFollow = fs["Viewer.cameraFollow"];
+    GLideSettings->gpuEngineParams.followDistance = fs["Viewer.followDistance"];
 
-    GPUEngineSettings->gpuEngineParams.currentKeyFrameColor = readInVector(fs, "Viewer.currentKeyFrameColor");
-    GPUEngineSettings->gpuEngineParams.allKeyFrameColor = readInVector(fs, "Viewer.allKeyFrameColor");
-    GPUEngineSettings->gpuEngineParams.tweenFrameDirectColor = readInVector(fs, "Viewer.tweenFrameDirectColor");
-    GPUEngineSettings->gpuEngineParams.tweenFrameColor = readInVector(fs, "Viewer.tweenFrameColor");
-    GPUEngineSettings->gpuEngineParams.mapPointsColor = readInVector(fs, "Viewer.mapPointsColor");
-    GPUEngineSettings->gpuEngineParams.mapPointsRefColor = readInVector(fs, "Viewer.mapPointsRefColor");
-    GPUEngineSettings->gpuEngineParams.featureLinesColor = readInVector(fs, "Viewer.featureLinesColor");
+    GLideSettings->gpuEngineParams.currentKeyFrameColor = readInVector(fs, "Viewer.currentKeyFrameColor");
+    GLideSettings->gpuEngineParams.allKeyFrameColor = readInVector(fs, "Viewer.allKeyFrameColor");
+    GLideSettings->gpuEngineParams.tweenFrameDirectColor = readInVector(fs, "Viewer.tweenFrameDirectColor");
+    GLideSettings->gpuEngineParams.tweenFrameColor = readInVector(fs, "Viewer.tweenFrameColor");
+    GLideSettings->gpuEngineParams.mapPointsColor = readInVector(fs, "Viewer.mapPointsColor");
+    GLideSettings->gpuEngineParams.mapPointsRefColor = readInVector(fs, "Viewer.mapPointsRefColor");
+    GLideSettings->gpuEngineParams.featureLinesColor = readInVector(fs, "Viewer.featureLinesColor");
 
-    GPUEngineSettings->gpuEngineParams.fov = fs["Viewer.fov"];
-    GPUEngineSettings->gpuEngineParams.far = fs["Viewer.far"];
-    GPUEngineSettings->gpuEngineParams.near = fs["Viewer.near"];
-    GPUEngineSettings->gpuEngineParams.featuresMaxDepth = fs["Viewer.featuresMaxDepth"];
-    GPUEngineSettings->gpuEngineParams.forceOriginStart = fs["Viewer.forceOriginStart"];
+    GLideSettings->gpuEngineParams.fov = fs["Viewer.fov"];
+    GLideSettings->gpuEngineParams.far = fs["Viewer.far"];
+    GLideSettings->gpuEngineParams.near = fs["Viewer.near"];
+    GLideSettings->gpuEngineParams.featuresMaxDepth = fs["Viewer.featuresMaxDepth"];
 
     return true;
 }

@@ -151,6 +151,6 @@ namespace GLideUtils
 {
     glm::vec3 readInVector(cv::FileStorage& fs, const std::string& parameter);
     glm::vec4 readInVector(cv::FileStorage& fs, const std::string& parameter, float defaultW);
-    bool ReadConfigFile(const std::string& path, GLideSettings* GPUEngineSettings);
+    bool ReadConfigFile(const std::string& path, GLideSettings* GLideSettings);
 }
 #endif //GLIDE_SLAM_GLIDEUTILS_H
