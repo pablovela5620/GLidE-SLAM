@@ -1317,7 +1317,7 @@ void GLideEngine::run()
         {
             //abort
             Logger::LogInfoI("GPUEngine: failed to initialize, aborting.");
-            m_stop.store(false);
+            m_stop.store(true);
         }
     }
 
@@ -1330,64 +1330,93 @@ void GLideEngine::run()
         m_newTime = static_cast<float>(SDL_GetTicks())/1000.0f;
         float dt = [this](float newT, float& oldT)->float{float deltaT = newT - oldT; if(oldT == 0.0f) deltaT = 0.0f; oldT = newT; return deltaT; }(m_newTime, m_oldTime);
 
-        m_activeCamera->update(dt);
 
-        //avoid CPU-GPU transfer every frame
-          uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
-          if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
-          {
-              ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
-              updateMapPoints();
-          }
-
-          uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
-          if (ma_LastFramesUpdateNumber != framesUpdateNumber)
-          {
-              ma_LastFramesUpdateNumber = framesUpdateNumber;
-              updateFrames3D();
-          }
-
-          // if(checkUpdateFramesFlag())
-          // {
-          //     //updateDirectMapping();
-          // }
-
+        //direct tracking computing
         updateDirectTracking();
 
-        render();
+        if (m_render)
+        {
+            //rendering related
+            m_activeCamera->update(dt);
+            //avoid CPU-GPU transfer every frame
+              uint32_t mapPointsUpdateNumber = m_map->GetMapPointsUpdateNumber();
+              if (ma_LastMapPointUpdateNumber != mapPointsUpdateNumber)
+              {
+                  ma_LastMapPointUpdateNumber = mapPointsUpdateNumber;
+                  updateMapPoints();
+              }
 
-        //get framerate (this is from viewer only!)
-        float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
-        //TODO: TEST WITH SDL_DELAY OR NOT, CURRENTLY REMOVED!
-        //SDL_Delay(33);
+              uint32_t framesUpdateNumber = m_map->GetFramesUpdateNumber();
+              if (ma_LastFramesUpdateNumber != framesUpdateNumber)
+              {
+                  ma_LastFramesUpdateNumber = framesUpdateNumber;
+                  updateFrames3D();
+              }
+
+              // if(checkUpdateFramesFlag())
+              // {
+              //     //updateDirectMapping();
+              // }
+
+
+            render();
+
+            //get framerate (this is from viewer only!)
+            float avgFPS = ViewerUtil::getFPS(m_frameTimes,dt,m_N);
+            //TODO: TEST WITH SDL_DELAY OR NOT, CURRENTLY REMOVED!
+            //SDL_Delay(33);
+        }
     }
 }
 
 void GLideEngine::updateDirectTracking()
 {
+    // ============================================
+    // STEP 1: Check if previous GPU work finished
+    // ============================================
+    if (m_trackFence)
+    {
+        // Poll the fence (timeout=0 means "don't wait, just check")
+        GLenum result = glClientWaitSync(m_trackFence, 0, 0);
+
+        if (result == GL_TIMEOUT_EXPIRED)
+        {
+            // GPU still busy from last frame - bail out early
+            // Rendering will still happen this frame in run()
+            return;
+        }
+
+        // Fence passed! GPU is done with previous work
+        glDeleteSync(m_trackFence);
+        m_trackFence = 0;
+
+        // Now safe to mark GPU as available
+        {
+            std::lock_guard<std::mutex> lock(m_directTrackingMutex);
+            m_gpuCompute->m_gpuBusy = false;
+        }
+        m_newFrameReady.notify_all();
+    }
+
+    // ============================================
+    // STEP 2: Try to grab new work (if GPU is free)
+    // ============================================
     uint32_t frameID = 0;
     cv::Mat img, pose;
     std::vector<glm::vec4> pts;
     bool doPrecompute = false;
     bool doTrack = false;
-    float outB[6] = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,};
     float outChi2 = 0.0f;
     int outN = 0;
 
-    //use buffer copies (safety):
-    //1-> producer writes to m_sourceImage (deep copy in update functionss using .clone()) -> buffer A
-    //2-> consumer does shallow copy img = m_sourceImage, shares buffer A (ref count)
-    //3-> if producer overwrites m_sourceImage (clone()), m_sourceImage points to buffer B
-    //while img still keeps buffer A alive.
     {
         std::lock_guard<std::mutex> lock(m_directTrackingMutex);
         if (m_directTrackDataAvailable && m_gpuCompute != nullptr)
         {
-
-            img = m_sourceImage; //img points to specific address
+            img = m_sourceImage;
             pose = m_initialPose;
             frameID = m_sourceFrameID;
-            //decide to run precompute on Ref frame or direct tracking in new frame
+
             if (m_runPrecompute)
             {
                 pts.swap(m_slamMapPoints);
@@ -1400,60 +1429,54 @@ void GLideEngine::updateDirectTracking()
                 doPrecompute = false;
                 doTrack = true;
             }
+
             m_directTrackDataAvailable = false;
-            m_gpuCompute->m_gpuBusy = true;
+            m_gpuCompute->m_gpuBusy = true;  // Mark busy BEFORE submitting work
         }
     }
 
-
-
-    //first step (either precompute/direct tracking, build image pyramids)
+    // ============================================
+    // STEP 3: Submit GPU work (if we got any)
+    // ============================================
     if (!img.empty())
     {
-        //for normal cases
         if (!m_logTiming)
             m_gpuCompute->buildPyramid(img);
-        else //otherwise debug timings to file
+        else
         {
             auto t0 = std::chrono::high_resolution_clock::now();
             m_gpuCompute->buildPyramid(img);
-            glFinish();
+            glFinish();  // Keep for timing measurements only
             auto t1 = std::chrono::high_resolution_clock::now();
             float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
             std::string fileContent = "imagePyramid," + std::to_string(frameID) + "," + std::to_string(dt);
             logTiming(fileContent);
         }
-
-
     }
 
     if (doPrecompute)
     {
-        //for normal cases
         if (!m_logTiming)
             m_gpuCompute->preCompute(pts, pose);
-        else //otherwise debug timings to file
+        else
         {
             auto t0 = std::chrono::high_resolution_clock::now();
             m_gpuCompute->preCompute(pts, pose);
-            glFinish();
+            glFinish();  // Keep for timing measurements only
             auto t1 = std::chrono::high_resolution_clock::now();
             float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
             std::string fileContent = "preCompute," + std::to_string(frameID) + "," + std::to_string(dt);
             logTiming(fileContent);
         }
-
     }
     else if (doTrack)
     {
-        //for normal cases
         if (!m_logTiming)
-            m_gpuCompute->track(frameID, pose,outChi2,outN);
-        else //otherwise debug timings to file
+            m_gpuCompute->track(frameID, pose, outChi2, outN);
+        else
         {
             auto t0 = std::chrono::high_resolution_clock::now();
-            bool ok = m_gpuCompute->track(frameID, pose,outChi2,outN);
-
+            bool ok = m_gpuCompute->track(frameID, pose, outChi2, outN);
             auto t1 = std::chrono::high_resolution_clock::now();
             float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
             std::string fileContent =
@@ -1462,9 +1485,18 @@ void GLideEngine::updateDirectTracking()
             logTiming(fileContent);
         }
     }
-    m_gpuCompute->m_gpuBusy = false;
-    m_newFrameReady.notify_all();
 
+    // ============================================
+    // STEP 4: Insert fence to mark end of this job
+    // ============================================
+    if (doPrecompute || doTrack)
+    {
+        m_trackFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        glFlush();  // Make sure commands are actually sent to GPU
+    }
+
+    // NOTE: We do NOT set m_gpuBusy = false here!
+    // It stays true until the fence passes next frame
 }
 
 void GLideEngine::updateNewFrame(uint32_t frameID, const cv::Mat &image, const cv::Mat &pose)
@@ -1500,7 +1532,7 @@ void GLideEngine::updateRefFrame(const cv::Mat& image, std::vector<glm::vec4> ma
 
         // wait until slot is free
         m_newFrameReady.wait(lock, [&]()
-            {return (!m_directTrackDataAvailable) || m_stop.load();});
+            {return (!m_directTrackDataAvailable && !m_gpuCompute->m_gpuBusy) || m_stop.load();});
 
         m_sourceImage = image.clone();
         m_slamMapPoints = std::move(mapPoints);
@@ -3798,7 +3830,7 @@ bool GuiWindow::initializeWindowShared(EGLContext sharedContext, EGLDisplay shar
         Logger::LogInfoI("Shared EGL made current ok " + std::string(errorMessage));
     }
 
-    eglSwapInterval(m_eglDisplay, 1);
+    eglSwapInterval(m_eglDisplay, 0);
 
     if (!gladLoadGLES2Loader((GLADloadproc) eglGetProcAddress))
     {

@@ -1228,6 +1228,8 @@ private:
 
     ORB_SLAM2::System* m_system{nullptr};
 
+    bool m_render{false};
+
     //Window
     GuiWindow *m_windowFrames2D{nullptr};
     GuiWindow *m_windowMap3D{nullptr};
@@ -1336,6 +1338,7 @@ private:
 
     //Compute module
     GLideCompute* m_gpuCompute{nullptr};
+    GLsync m_trackFence = 0;
 
     //log timings (to file) for debugging:
     bool m_logTiming{false};

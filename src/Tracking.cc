@@ -279,8 +279,8 @@ namespace ORB_SLAM2
         {
             mCurrentFrame = Frame(mImGray, timestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
                                   mThDepth);
-            mCurrentDirectFrameCPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
-            mCurrentDirectFrameGPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+            // mCurrentDirectFrameCPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+             mCurrentDirectFrameGPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
         }
 
         Logger::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
@@ -291,13 +291,13 @@ namespace ORB_SLAM2
         Track();
 
 
-        //write csv file to compare to ground-truth:
-        std::string indirectTweenFrame = "indFrames.txt";
-        std::string directTweenFrame = "dFrames.txt";
-
-        //Logger::LogInfoII("\n Timestamp: " + to_string(timestamp));
-        if (mTweenFrameData.size() > 0) WriteTweenFrameData(indirectTweenFrame, mTweenFrameData, mCurrentFrame.mnId);
-        if (mDTweenFrameData.size() > 0) WriteTweenFrameData(directTweenFrame, mDTweenFrameData, mCurrentFrame.mnId);
+        // //write csv file to compare to ground-truth:
+        // std::string indirectTweenFrame = "indFrames.txt";
+        // std::string directTweenFrame = "dFrames.txt";
+        //
+        // //Logger::LogInfoII("\n Timestamp: " + to_string(timestamp));
+        // if (mTweenFrameData.size() > 0) WriteTweenFrameData(indirectTweenFrame, mTweenFrameData, mCurrentFrame.mnId);
+        // if (mDTweenFrameData.size() > 0) WriteTweenFrameData(directTweenFrame, mDTweenFrameData, mCurrentFrame.mnId);
 
 
         return mCurrentFrame.mTcw.clone();
@@ -347,27 +347,27 @@ namespace ORB_SLAM2
 
 
                     //Perform direct tracking (CPU)
-                    auto cpuStart = std::chrono::high_resolution_clock::now();
-                    bool bDirectTrackRecovery = mCurrentDirectFrameCPU.mnId < mpPrevDirectRefID + 3;
-                    mbDirectTrackCPUOk = trackDirectIC(&mCurrentDirectFrameCPU, &mLastDirectFrame, m_directTrackCache,
-                                                         false, mLastDirectChi2CPU);
-                    auto cpuEnd = std::chrono::high_resolution_clock::now();
-                    float cpuMs = std::chrono::duration<float, std::milli>(cpuEnd - cpuStart).count();
-                    Logger::LogInfoIII("CPU trackDirectIC: " + std::to_string(cpuMs) + " ms");
-
-                    cv::Mat resultPoseCPU;
+                    // auto cpuStart = std::chrono::high_resolution_clock::now();
+                    // bool bDirectTrackRecovery = mCurrentDirectFrameCPU.mnId < mpPrevDirectRefID + 3;
+                    // mbDirectTrackCPUOk = trackDirectIC(&mCurrentDirectFrameCPU, &mLastDirectFrame, m_directTrackCache,
+                    //                                      false, mLastDirectChi2CPU);
+                    // auto cpuEnd = std::chrono::high_resolution_clock::now();
+                    // float cpuMs = std::chrono::duration<float, std::milli>(cpuEnd - cpuStart).count();
+                    // Logger::LogInfoIII("CPU trackDirectIC: " + std::to_string(cpuMs) + " ms");
+                    //
+                    // cv::Mat resultPoseCPU;
                     cv::Mat resultPoseGPU;
                     int gpuN;
 
                     //By this time, the pose should be ready!
                     mbDirectTrackGPUOk = mpGPUEngine->getTrackResult(mCurrentFrame.mnId, resultPoseGPU, mLastDirectChi2GPU, gpuN);
 
-                    if (mbDirectTrackCPUOk)
-                    {
-                        //compare poses and Chi2
-                        resultPoseCPU = mCurrentDirectFrameCPU.mTcw.clone();
-
-                    }
+                    // if (mbDirectTrackCPUOk)
+                    // {
+                    //     //compare poses and Chi2
+                    //     resultPoseCPU = mCurrentDirectFrameCPU.mTcw.clone();
+                    //
+                    // }
 
                     if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
                     {
@@ -376,25 +376,26 @@ namespace ORB_SLAM2
 
 
                     // Log only when BOTH succeeded
-                    if (mbDirectTrackCPUOk && mbDirectTrackGPUOk && !resultPoseGPU.empty())
-                    {
-                        LogCPUvsGPU(mCurrentFrame.mnId, resultPoseCPU, resultPoseGPU, mLastDirectChi2CPU, mLastDirectChi2GPU);
-                    }
+                    // if (mbDirectTrackCPUOk && mbDirectTrackGPUOk && !resultPoseGPU.empty())
+                    // {
+                    //     LogCPUvsGPU(mCurrentFrame.mnId, resultPoseCPU, resultPoseGPU, mLastDirectChi2CPU, mLastDirectChi2GPU);
+                    // }
 
 
-                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2CPU);
+                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2GPU);
                     mbUseDirectTracking = false;
-                    if (mbDirectTrackCPUOk && !bSwitchToIndirect)
+                    if (mbDirectTrackGPUOk && !bSwitchToIndirect)
                     {
                         // Tween frame: use direct pose, skip TrackLocalMap
-                        mCurrentFrame.SetPose(mCurrentDirectFrameCPU.mTcw);
+                        mCurrentFrame.SetPose(mCurrentDirectFrameGPU.mTcw);
                         mbUseDirectTracking = true;
                         bOK = true;
-                        mpMap->AddDirectTweenFrameCPU(mCurrentDirectFrameCPU);
-                        if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
-                        {
-                            mpMap->AddDirectTweenFrameGPU(mCurrentDirectFrameGPU);
-                        }
+
+                        mpMap->AddDirectTweenFrameCPU(mCurrentDirectFrameGPU);
+                        // if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
+                        // {
+                        //     mpMap->AddDirectTweenFrameGPU(mCurrentDirectFrameGPU);
+                        // }
                         mpMap->NotifyFramesUpdated();
 
                     }
@@ -495,8 +496,8 @@ namespace ORB_SLAM2
                     if (mbUseDirectTracking)
                     {
                         std::vector<double> directTweenFrameData;
-                        FetchPosandRot(mCurrentDirectFrameCPU.mTimeStamp, mCurrentDirectFrameCPU.mRwc,
-                                       mCurrentDirectFrameCPU.mtwc, directTweenFrameData);
+                        FetchPosandRot(mCurrentDirectFrameGPU.mTimeStamp, mCurrentDirectFrameGPU.mRwc,
+                                       mCurrentDirectFrameGPU.mtwc, directTweenFrameData);
                         mDTweenFrameData = directTweenFrameData;
                     }
                     else
@@ -527,14 +528,14 @@ namespace ORB_SLAM2
             //mpFrameDrawer->Update(this);
 
 
-            if (mbDirectTrackCPUOk && mbUseDirectTracking)
+            if (mbDirectTrackGPUOk && mbUseDirectTracking)
             {
                 if (!mLastDirectFrame.mTcw.empty())
                 {
                     cv::Mat LastTwc = cv::Mat::eye(4, 4,CV_32F);
                     mLastDirectFrame.mRwc.copyTo(LastTwc.rowRange(0, 3).colRange(0, 3));
                     mLastDirectFrame.mtwc.copyTo(LastTwc.rowRange(0, 3).col(3));
-                    mVelocityDirect = mCurrentDirectFrameCPU.mTcw * LastTwc;
+                    mVelocityDirect = mCurrentDirectFrameGPU.mTcw * LastTwc;
                 } else
                     mVelocityDirect = cv::Mat();
             } else
@@ -622,8 +623,8 @@ namespace ORB_SLAM2
                 mLastFrame = Frame(mCurrentFrame);
             }
 
-            if (mbDirectTrackCPUOk)
-                mLastDirectFrame = FrameDirect(mCurrentDirectFrameCPU);
+            if (mbDirectTrackGPUOk)
+                mLastDirectFrame = FrameDirect(mCurrentDirectFrameGPU);
         }
 
         // Store frame pose information to retrieve the complete camera trajectory afterwards.
@@ -1287,12 +1288,12 @@ namespace ORB_SLAM2
         const int nKFs = mpMap->KeyFramesInMap();
 
         // Do not insert keyframes if not enough frames have passed
-        if (mCurrentDirectFrameCPU.mnId < mpPrevDirectRefID + mMaxFramesDirect && nKFs > mMaxFramesDirect)
+        if (mCurrentDirectFrameGPU.mnId < mpPrevDirectRefID + mMaxFramesDirect && nKFs > mMaxFramesDirect)
             return false;
 
         // --- Temporal conditions (from original) ---
-        const bool c1a = mCurrentDirectFrameCPU.mnId >= mpPrevDirectRefID + mMaxFramesDirect;
-        const bool c1b = (mCurrentDirectFrameCPU.mnId >= mpPrevDirectRefID + mMinFrames &&
+        const bool c1a = mCurrentDirectFrameGPU.mnId >= mpPrevDirectRefID + mMaxFramesDirect;
+        const bool c1b = (mCurrentDirectFrameGPU.mnId >= mpPrevDirectRefID + mMinFrames &&
                           !mpLocalMapper->KeyframesInQueue());
 
         // --- Chi2-based quality conditions (replaces map point stats) ---
@@ -1427,17 +1428,17 @@ namespace ORB_SLAM2
         //mpMap->ClearTweenFrames();
         mpPrevDirectRefID = mCurrentFrame.mnId;
         mLastDirectFrame = FrameDirect(mCurrentFrame);
-        mLastDirectFrame.m_pyrImg = mCurrentFrame.m_pyrImg;
-        mCurrentFrame.computeImagePyramids(mImGray);
-
-        auto cpuStart = std::chrono::high_resolution_clock::now();
-
-        //CPU
-        trackPrecompute(mCurrentFrame, m_directTrackCache);
-
-        auto cpuEnd = std::chrono::high_resolution_clock::now();
-        float cpuMs = std::chrono::duration<float, std::milli>(cpuEnd - cpuStart).count();
-        Logger::LogInfoIII("CPU PreCompute: " + std::to_string(cpuMs) + " ms");
+        // mLastDirectFrame.m_pyrImg = mCurrentFrame.m_pyrImg;
+        // mCurrentFrame.computeImagePyramids(mImGray);
+        //
+        // auto cpuStart = std::chrono::high_resolution_clock::now();
+        //
+        // //CPU
+        // trackPrecompute(mCurrentFrame, m_directTrackCache);
+        //
+        // auto cpuEnd = std::chrono::high_resolution_clock::now();
+        // float cpuMs = std::chrono::duration<float, std::milli>(cpuEnd - cpuStart).count();
+        // Logger::LogInfoIII("CPU PreCompute: " + std::to_string(cpuMs) + " ms");
 
         //GPU preCompute
         std::vector<glm::vec4> mapPointsGLM;
@@ -1757,7 +1758,7 @@ namespace ORB_SLAM2
 
         //Initialize direct tracking
 
-        mCurrentDirectFrameCPU = FrameDirect(mCurrentFrame);
+        mCurrentDirectFrameGPU = FrameDirect(mCurrentFrame);
         updateDirectReference();
 
 
