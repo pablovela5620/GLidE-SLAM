@@ -21,7 +21,7 @@ struct GLideSettings
 
 	struct GPUEngineParams
     {
-	    int runViewer{1};
+	    int render{1};
 		int logTiming{0};
 
     	int width{640};

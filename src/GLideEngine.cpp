@@ -1238,6 +1238,7 @@ bool GLideEngine::initialize()
 {
 
     m_isInitialized = true;
+    m_render = m_GPUEngineSettings->gpuEngineParams.render;
     m_width = m_GPUEngineSettings->gpuEngineParams.width;
     m_height = m_GPUEngineSettings->gpuEngineParams.height;
 
