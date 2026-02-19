@@ -38,8 +38,6 @@ Thirdparty/**/lib/
 
 # ORB vocabulary (never commit)
 Vocabulary/ORBvoc.txt
-Vocabulary/ORBvoc.txt.tar.gz
-Vocabulary/*.tar.gz
 
 # example binaries / outputs
 Examples/ROS/**/build/
@@ -65,3 +63,5 @@ Examples/Monocular/mono_kitti
 Examples/Monocular/mono_euroc
 Examples/Stereo/stereo_*
 Examples/RGB-D/rgbd_*
+# Only ignore uncompressed vocabulary
+Vocabulary/ORBvoc.txt
