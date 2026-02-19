@@ -69,7 +69,7 @@ if(USE_EGL_SDL)
   endif()
 
   include_directories(/usr/include/EGL /usr/include/GLES )
-  find_library(EGL_LIBRARY NAMES EGL libEGL.so PATHS /usr/lib /usr/lib/x86_64-linux-gnu)
+  find_library(EGL_LIBRARY NAMES EGL libEGL.so PATHS /usr/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
   if(EGL_LIBRARY)
     message(STATUS "EGL library found: ${EGL_LIBRARY}")
   else()
