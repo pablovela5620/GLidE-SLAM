@@ -1,4 +1,4 @@
-#version 320 es
+#version 310 es
 
 layout (location = 0) in vec3 vertexPosition;
 layout (location = 1) in vec2 textureCoord;
