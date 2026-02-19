@@ -1,44 +1,58 @@
-##List of Known Dependencies
-###ORB-SLAM2 version 1.0
+# List of Known Dependencies
 
-In this document we list all the pieces of code included  by ORB-SLAM2 and linked libraries which are not property of the authors of ORB-SLAM2.
+## GLidE-SLAM (derived from ORB-SLAM2)
 
+This document lists all code and libraries included in GLidE-SLAM that are not the property of the GLidE-SLAM authors.
 
-#####Code in **src** and **include** folders
+## Code in `src` and `include` folders
 
-* *ORBextractor.cc*.
-This is a modified version of orb.cpp of OpenCV library. The original code is BSD licensed.
+### From ORB-SLAM2
 
-* *PnPsolver.h, PnPsolver.cc*.
-This is a modified version of the epnp.h and epnp.cc of Vincent Lepetit. 
-This code can be found in popular BSD licensed computer vision libraries as [OpenCV](https://github.com/Itseez/opencv/blob/master/modules/calib3d/src/epnp.cpp) and [OpenGV](https://github.com/laurentkneip/opengv/blob/master/src/absolute_pose/modules/Epnp.cpp). The original code is FreeBSD.
+* **ORBextractor.cc**  
+  Modified version of orb.cpp from OpenCV library (BSD licensed)
 
-* Function *ORBmatcher::DescriptorDistance* in *ORBmatcher.cc*.
-The code is from: http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel.
-The code is in the public domain.
+* **PnPsolver.h, PnPsolver.cc**  
+  Modified version of epnp by Vincent Lepetit (FreeBSD)  
+  Also found in [OpenCV](https://github.com/opencv/opencv) and [OpenGV](https://github.com/laurentkneip/opengv)
 
-#####Code in Thirdparty folder
+* **ORBmatcher::DescriptorDistance** in ORBmatcher.cc  
+  From: http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel  
+  Public domain
 
-* All code in **DBoW2** folder.
-This is a modified version of [DBoW2](https://github.com/dorian3d/DBoW2) and [DLib](https://github.com/dorian3d/DLib) library. All files included are BSD licensed.
+### GLidE-SLAM Additions
 
-* All code in **g2o** folder.
-This is a modified version of [g2o](https://github.com/RainerKuemmerle/g2o). All files included are BSD licensed.
+* **GLideEngine.cpp/h**  
+  Proprietary GPU acceleration code (see source headers for licensing)
 
-#####Library dependencies 
+* **ImageHandler.cpp/h, GLideUtils.cpp/h**  
+  GLidE-SLAM custom code (GPL-3.0 unless otherwise noted)
 
-* **Pangolin (visualization and user interface)**.
-[MIT license](https://en.wikipedia.org/wiki/MIT_License).
+* **Thirdparty/glad/**  
+  [GLAD](https://github.com/Dav1dde/glad) OpenGL loader (MIT/Public Domain)
 
-* **OpenCV**.
-BSD license.
+## Code in Thirdparty folder
 
-* **Eigen3**.
-For versions greater than 3.1.1 is MPL2, earlier versions are LGPLv3.
+* **DBoW2**  
+  Modified version of [DBoW2](https://github.com/dorian3d/DBoW2) and [DLib](https://github.com/dorian3d/DLib)  
+  BSD licensed
 
-* **ROS (Optional, only if you build Examples/ROS)**.
-BSD license. In the manifest.xml the only declared package dependencies are roscpp, tf, sensor_msgs, image_transport, cv_bridge, which are all BSD licensed.
+* **g2o**  
+  Modified version of [g2o](https://github.com/RainerKuemmerle/g2o)  
+  BSD licensed
 
+## Library Dependencies
 
+* **OpenCV** - Image processing and features (BSD license)
+* **Eigen3** - Linear algebra (MPL2 for v3.1.1+, LGPLv3 for earlier)
+* **SDL2** - Window/input management for viewer (Zlib license)
+* **OpenGL ES 3.1** - GPU compute shaders (vendor-specific, typically MIT/Apache)
+* **EGL** - OpenGL ES context creation (vendor-specific)
+* **Boost** - Utilities (Boost Software License)
 
+## Original ORB-SLAM2 Authors
 
+GLidE-SLAM is derived from ORB-SLAM2 by:
+- Raúl Mur-Artal
+- Juan D. Tardós
+- J. M. M. Montiel
+- Dorian Gálvez-López (DBoW2)

@@ -1,11 +1,47 @@
-ORB-SLAM2 is released under a GPLv3 license (see License-gpl.txt).
-Please see Dependencies.md for a list of all included code and library dependencies which are not property of the authors of ORB-SLAM2.
+GLidE-SLAM Licensing
+====================
 
-For a closed-source version of ORB-SLAM2 for commercial purposes, please contact the authors.
+GLidE-SLAM is a hybrid visual SLAM system with multiple licensing terms:
 
-If you use ORB-SLAM in an academic work, please cite the most relevant publication associated by visiting:
-https://github.com/raulmur/ORB_SLAM2
+1. CORE SLAM FRAMEWORK (GPL-3.0)
+---------------------------------
+The core SLAM components derived from ORB-SLAM2 are released under GPL-3.0 
+(see License-gpl.txt).
 
+This includes:
+- Tracking, Local Mapping, Loop Closing modules
+- ORB feature extraction and matching
+- Map, KeyFrame, MapPoint data structures
+- System orchestration
+- All code in Thirdparty/ (DBoW2, g2o - BSD licensed)
 
+2. GLidE ENGINE (PROPRIETARY)
+------------------------------
+The GPU acceleration components (GLideEngine.cpp/h and related) are 
+PROPRIETARY and subject to the following terms:
 
+ACADEMIC/RESEARCH USE: Free to use with proper citation
+COMMERCIAL USE: Requires written license agreement
 
+These files may NOT be:
+  - Used in commercial products without permission
+  - Redistributed in modified form without permission
+  - Used to train machine learning models without permission
+
+For commercial licensing inquiries:
+  Contact: carlos.pinheiro-de-sousa@uni-konstanz.de
+
+3. DEPENDENCIES
+---------------
+See Dependencies.md for a complete list of third-party code and libraries.
+
+CITATIONS
+---------
+If you use GLidE-SLAM in academic work, please cite:
+
+[Your IROS 2026 paper - to be added after acceptance]
+
+And the original ORB-SLAM2 paper:
+  Raúl Mur-Artal and Juan D. Tardós. ORB-SLAM2: an Open-Source SLAM System 
+  for Monocular, Stereo and RGB-D Cameras. IEEE Transactions on Robotics, 
+  vol. 33, no. 5, pp. 1255-1262, 2017.

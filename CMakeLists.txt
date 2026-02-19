@@ -34,11 +34,11 @@ endif()
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
 # ---- OpenCV (FORCE CONFIG MODE, OpenCV 4) ----
-if(NOT OpenCV_DIR)
-  set(OpenCV_DIR "/usr/lib/x86_64-linux-gnu/cmake/opencv4")
+# ---- OpenCV ----
+find_package(OpenCV 4 REQUIRED)
+if(NOT OpenCV_FOUND)
+  find_package(OpenCV 3 REQUIRED)
 endif()
-
-find_package(OpenCV REQUIRED CONFIG)
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
 
 # ---- Eigen ----
