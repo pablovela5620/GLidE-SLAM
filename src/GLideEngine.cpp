@@ -1,7 +1,7 @@
 /*
-* GPUEngine - GL-accelerated Indirect Direct Embedded SLAM
+* GLide-SLAM - GL-accelerated Indirect Direct Embedded SLAM
  *
- * Copyright (c) 2025 [Carlos A. Pinheiro de Sousa / University of Konstanz]
+ * Copyright (c) 2025 [Carlos Pinheiro / University of Konstanz]
  *
  * This file is part of GLidE-SLAM and is provided under a PROPRIETARY LICENSE.
  * Unlike other parts of this project (licensed under GPL-3.0), this file may NOT be:
@@ -15,6 +15,7 @@
  * If you use this code in academic work, please cite:
  *   [Your IROS 2025 paper citation here]
  */
+
 
 #include "GLideEngine.h"
 

@@ -1,5 +1,5 @@
 /*
-* GPUEngine - GL-accelerated Indirect Direct Embedded SLAM
+* GLide-SLAM - GL-accelerated Indirect Direct Embedded SLAM
  *
  * Copyright (c) 2025 [Carlos Pinheiro / University of Konstanz]
  *
