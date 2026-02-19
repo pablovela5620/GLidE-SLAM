@@ -14,21 +14,31 @@ A hybrid visual SLAM system combining ORB-SLAM2's sparse backend with GPU-accele
 
 ## Installation
 
-### Prerequisites
+### Quick Install (Debian 12 / Ubuntu 22.04+)
+```bash
+./install_dependencies.sh
+./build.sh
+```
+
+### Manual Installation
+
+#### Prerequisites
 
 **Debian 12 (Bookworm) / Ubuntu 22.04+**
 ```bash
 sudo apt update
 sudo apt install -y \
-  build-essential cmake git pkg-config \
+  build-essential cmake git \
   libeigen3-dev \
   libopencv-dev \
   libsdl2-dev \
-  libegl1-mesa-dev libgles2-mesa-dev libgbm-dev \
-  libboost-all-dev
+  libboost-all-dev \
+  libglm-dev \
+  libegl1-mesa-dev \
+  libgles2-mesa-dev
 ```
 
-### GPU Requirements
+#### GPU Requirements
 
 - **OpenGL ES 3.1+** capable GPU
 - For embedded platforms: Mali, VideoCore, or similar with compute shader support
@@ -39,14 +49,13 @@ eglinfo | grep "OpenGL ES"
 # Should show: OpenGL ES 3.1 or higher
 ```
 
-### Build
+#### Build
 ```bash
 # Clone repository
-git clone <repository-url> GLidE-SLAM
+git clone https://github.com/capsMD/GLidE-SLAM.git
 cd GLidE-SLAM
 
-# Build Thirdparty libraries and GLidE-SLAM
-chmod +x build.sh
+# Build everything
 ./build.sh
 ```
 
@@ -57,7 +66,7 @@ This will:
 4. Build `libGLidE_SLAM.so` in `lib/`
 5. Build example executables in `Examples/Monocular/`
 
-### Embedded Platforms (ARM)
+#### Embedded Platforms (ARM)
 
 **Tested on:**
 - Radxa Zero 3W (RK3566, Mali-G52)

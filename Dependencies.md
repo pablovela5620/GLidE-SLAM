@@ -48,7 +48,7 @@ This document lists all code and libraries included in GLidE-SLAM that are not t
 * **OpenGL ES 3.1** - GPU compute shaders (vendor-specific, typically MIT/Apache)
 * **EGL** - OpenGL ES context creation (vendor-specific)
 * **Boost** - Utilities (Boost Software License)
-
+* **GLM** - OpenGL Mathematics library for shader math (MIT license, header-only)
 ## Original ORB-SLAM2 Authors
 
 GLidE-SLAM is derived from ORB-SLAM2 by:
