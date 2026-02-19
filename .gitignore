@@ -42,9 +42,6 @@ Vocabulary/ORBvoc.txt.tar.gz
 Vocabulary/*.tar.gz
 
 # example binaries / outputs
-Examples/Monocular/mono_*
-Examples/Stereo/stereo_*
-Examples/RGB-D/rgbd_*
 Examples/ROS/**/build/
 
 # local IDE junk
@@ -57,3 +54,14 @@ FrameTrajectory.txt
 KeyFrameTrajectory.txt
 dFrames.txt
 indFrames.txt
+
+# Ignore stereo and RGB-D examples entirely
+Examples/Stereo/
+Examples/RGB-D/
+
+# Compiled example binaries only (no .cc source files)
+Examples/Monocular/mono_tum
+Examples/Monocular/mono_kitti
+Examples/Monocular/mono_euroc
+Examples/Stereo/stereo_*
+Examples/RGB-D/rgbd_*
