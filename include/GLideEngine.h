@@ -1105,46 +1105,35 @@ private:
 
     //trackShader SSBO binding layout
     // Inputs:
-    static const GLuint TRACK_IN_MAPPOINTS      {0}; // m_ssboMapPoints (vec4 pos[])
-    static const GLuint TRACK_IN_VALID          {1}; // preComputeCache[L].ssbo_isValid (uint[])
-    static const GLuint TRACK_IN_I              {2}; // preComputeCache[L].ssbo_I (float[])
-    static const GLuint TRACK_IN_J              {3}; // preComputeCache[L].ssbo_J (float[])
+    static const GLuint TRACK_IN_MAPPOINTS          {0}; // m_ssboMapPoints (vec4 pos[])
+    static const GLuint TRACK_IN_VALID              {1}; // preComputeCache[L].ssbo_isValid (uint[])
+    static const GLuint TRACK_IN_I                  {2}; // preComputeCache[L].ssbo_I (float[])
+    static const GLuint TRACK_IN_J                  {3}; // preComputeCache[L].ssbo_J (float[])
 
     // Outputs:
-    static const GLuint TRACK_OUT_B0             {5}; // trackCache[L].ssbo_B0 (vec4[])
-    static const GLuint TRACK_OUT_B1             {6}; // trackCache[L].ssbo_B1 (vec4[])
-    static const GLuint TRACK_OUT_CHI2           {7}; // trackCache[L].ssbo_Chi2 (float[])
-    static const GLuint TRACK_OUT_ISVALID        {8}; // trackCache[L].ssbo_isValid (uint[])
+    static const GLuint TRACK_OUT_B                 {4}; // trackCache[L].ssbo_B (struct { vec4 b0; vec4 b1; }[N])
+    static const GLuint TRACK_OUT_CHI2Valid         {5}; // trackCache[L].ssbo_Chi2Valid (struct { float chi2; uint valid; }[N])
 
     // Input/Output:
-    static const GLuint TRACK_INOUT_ALIGN          {9}; // trackCache[L].ssbo_Align (vec4[])
-    static const GLuint TRACK_INOUT_POSE           {18};// ssbo_Pose  (mat4) (single pose in/out)
+    static const GLuint TRACK_INOUT_ALIGN           {6}; // trackCache[L].ssbo_Align (vec4[])
+    static const GLuint TRACK_INOUT_POSE            {7}; // ssbo_Pose  (mat4) (single pose in/out)
 
     //reduceTrackShader binding layout
     // Inputs:
-    static const GLuint REDUCE_IN_B0        {5};
-    static const GLuint REDUCE_IN_B1        {6};
-    static const GLuint REDUCE_IN_CHI2      {7};
-    static const GLuint REDUCE_IN_ISVALID   {8};
+    static const GLuint REDUCE_IN_B                 {4};
+    static const GLuint REDUCE_IN_CHI2Valid         {5};
 
     // Outputs:
-    static const GLuint REDUCE_OUT_B0       {10};
-    static const GLuint REDUCE_OUT_B1       {11};
-    static const GLuint REDUCE_OUT_CHI2     {12};
-    static const GLuint REDUCE_OUT_ISVALID  {13};
+    static const GLuint REDUCE_OUT_B                {6};
+    static const GLuint REDUCE_OUT_CHI2Valid        {7};
 
     //solveTrackShader shader binding layout
-    static const GLuint SOLVE_IN_B0LEVEL    {10}; // vec4
-    static const GLuint SOLVE_IN_B1LEVEL    {11}; // vec4
-    static const GLuint SOLVE_IN_CHI2LEVEL  {12}; // float
-    static const GLuint SOLVE_IN_VALIDLEVEL {13}; // uint
-
-    static const GLuint SOLVE_IN_HLEVEL     {14}; // float[21] (packed symmetric)
-    static const GLuint SOLVE_INOUT_STATE   {15}; // TrackState (bestChi, divergeCount, bestPose, etc.)
-
-    static const GLuint SOLVE_INOUT_ACCEPTED{16}; // write only to level 0 of state buffer
-
-    static const GLuint SOLVE_INOUT_POSE    {18}; // mat4 (your pose SSBO)
+    static const GLuint SOLVE_IN_BLEVEL             {6}; // vec4[2] (matches REDUCE_OUT_B)
+    static const GLuint SOLVE_IN_CHI2ValidLEVEL     {7}; // struct { float chi2; uint valid; } (matches REDUCE_OUT_CHI2Valid)
+    static const GLuint SOLVE_IN_HLEVEL             {3}; // float[21] (packed symmetric)
+    static const GLuint SOLVE_INOUT_STATE           {2}; // TrackState (bestChi, divergeCount, bestPose, etc.)
+    static const GLuint SOLVE_INOUT_ACCEPTED        {1}; // write only to level 0 of state buffer
+    static const GLuint SOLVE_INOUT_POSE            {0}; // mat4 (pose)
 
     GLuint m_ssboMapPoints{0};
     glm::mat4 m_poseInitial{glm::mat4(1.0f)};
