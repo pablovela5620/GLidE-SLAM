@@ -1,3 +1,21 @@
+# GLidE-SLAM Dependencies
+
+## Quick Install (Ubuntu/Debian)
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential cmake git pkg-config wget \
+  libopencv-dev \
+  libeigen3-dev \
+  libglm-dev \
+  libsdl2-dev \
+  libegl1-mesa-dev \
+  libgles2-mesa-dev \
+  libboost-all-dev
+```
+
+---
+
 # List of Known Dependencies
 
 ## GLidE-SLAM (derived from ORB-SLAM2)
@@ -49,6 +67,7 @@ This document lists all code and libraries included in GLidE-SLAM that are not t
 * **EGL** - OpenGL ES context creation (vendor-specific)
 * **Boost** - Utilities (Boost Software License)
 * **GLM** - OpenGL Mathematics library for shader math (MIT license, header-only)
+
 ## Original ORB-SLAM2 Authors
 
 GLidE-SLAM is derived from ORB-SLAM2 by:
