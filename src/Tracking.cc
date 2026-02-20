@@ -283,7 +283,7 @@ namespace ORB_SLAM2
              mCurrentDirectFrameGPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
         }
 
-        Logger::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
+        //Logger::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
         //push image to viewer GPU (push 8bit, convert to 32F on GPU)
         mpGPUEngine->updateNewFrame(mCurrentFrame.mnId, mImGray,mLastDirectFrame.mTcw);
@@ -1308,11 +1308,11 @@ namespace ORB_SLAM2
 
         if ((c1a || c1b || bTrackingWeak) && bQualityDegrading)
         {
-            Logger::LogInfoI("Switch to Indirect tracking: " + std::to_string(mCurrentFrame.mnId) +
-                                          ", More than max frames=" + c1aString +
-                                          ", More than min frames=" + c1bString +
-                                          ", Tracking too weak=" + c1cString +
-                                          ", Tracking degraded=" + c2String);
+            // Logger::LogInfoI("Switch to Indirect tracking: " + std::to_string(mCurrentFrame.mnId) +
+            //                               ", More than max frames=" + c1aString +
+            //                               ", More than min frames=" + c1bString +
+            //                               ", Tracking too weak=" + c1cString +
+            //                               ", Tracking degraded=" + c2String);
             mpPrevDirectRefID = mCurrentFrame.mnId;
             return true;
         }
@@ -2079,11 +2079,11 @@ namespace ORB_SLAM2
             // Otherwise send a signal to interrupt BA
             if (bLocalMappingIdle)
             {
-                Logger::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
-                                              ", More than max frames=" + c1aString +
-                                              ", More than min frames=" + c1bString +
-                                              ", Tracking is weak=" + c1cString +
-                                              ", Too few tracked points=" + c2String);
+                // Logger::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
+                //                               ", More than max frames=" + c1aString +
+                //                               ", More than min frames=" + c1bString +
+                //                               ", Tracking is weak=" + c1cString +
+                //                               ", Too few tracked points=" + c2String);
 
 
                 return true;
@@ -2094,11 +2094,11 @@ namespace ORB_SLAM2
                 {
                     if (mpLocalMapper->KeyframesInQueue() < 3)
                     {
-                        Logger::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
-                                                      ", More than max frames=" + c1aString +
-                                                      ", More than min frames=" + c1bString +
-                                                      ", Tracking is weak=" + c1cString +
-                                                      ", Too few tracked points=" + c2String);
+                        // Logger::LogInfoI("New KF: " + std::to_string(mCurrentFrame.mnId) +
+                        //                               ", More than max frames=" + c1aString +
+                        //                               ", More than min frames=" + c1bString +
+                        //                               ", Tracking is weak=" + c1cString +
+                        //                               ", Too few tracked points=" + c2String);
                         return true;
                     } else
                         return false;
