@@ -1107,7 +1107,7 @@ private:
     static const GLuint TRACK_IN_J                  {3}; // preComputeCache[L].ssbo_J (float[])
 
     // Outputs:
-    static const GLuint TRACK_OUT_B                 {4}; // trackCache[L].ssbo_B (struct { vec4 b0; vec4 b1; }[N])
+    static const GLuint TRACK_OUT_B                 {4}; // trackCache[L].ssbo_B (  vec4 b[2*N]; [N])
     static const GLuint TRACK_OUT_CHI2Valid         {5}; // trackCache[L].ssbo_Chi2Valid (struct { float chi2; uint valid; }[N])
 
     // Input/Output:

@@ -683,7 +683,7 @@ bool GLideCompute::initializeTrack()
 
         //Chi2 output, floats
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2Valid);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * (sizeof(float)+sizeof(uint))), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * (sizeof(float)+sizeof(uint32_t))), nullptr, GL_DYNAMIC_DRAW);
 
         //Align, vec4 (keeps du,dv, valid) for each point
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Align);
@@ -702,7 +702,7 @@ bool GLideCompute::initializeTrack()
         //b output, vec4 last 2 elements (b4,b5,0,0)
         //Chi2 output, floats
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2ValidLevel);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)((sizeof(float)+sizeof(uint))), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)((sizeof(float)+sizeof(uint32_t))), nullptr, GL_DYNAMIC_DRAW);
 
     }
 

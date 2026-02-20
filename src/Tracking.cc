@@ -1826,8 +1826,6 @@ namespace ORB_SLAM2
             }
         }
 
-        Logger::LogInfoII("CPU Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
-
         return nmatchesMap >= 10;
     }
 
@@ -1898,9 +1896,6 @@ namespace ORB_SLAM2
 
     bool Tracking::TrackWithMotionModel()
     {
-        Logger::LogInfoII(
-            "CPU Indirect Tracker: Tracking with motion model Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
-            std::to_string(mLastFrame.mnId));
 
         ORBmatcher matcher(0.9, true);
 
@@ -1959,8 +1954,6 @@ namespace ORB_SLAM2
             mbVO = nmatchesMap < 10;
             return nmatches > 20;
         }
-
-        Logger::LogInfoII("CPU Indirect Tracker: Tracked Matches " + std::to_string(nmatches));
 
         return nmatchesMap >= 10;
     }
