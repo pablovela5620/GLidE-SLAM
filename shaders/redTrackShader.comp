@@ -7,17 +7,15 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 uniform uint uNPoints;
 
+struct Chi2ValidData{float chi2;uint valid;};
+
 // Inputs (per-point)
-layout(std430, binding = 5) readonly buffer B0Buffer    { vec4  B0[];   };
-layout(std430, binding = 6) readonly buffer B1Buffer    { vec4  B1[];   };
-layout(std430, binding = 7) readonly buffer Chi2Buffer  { float Chi2[]; };
-layout(std430, binding = 8) readonly buffer ValidBuffer { uint  Valid[]; };
+layout(std430, binding = 4) readonly buffer BBuffer    { vec4  B[];   } inB;
+layout(std430, binding = 5) readonly buffer Chi2ValidBuffer  { Chi2ValidData data[]; } inChi2Valid;
 
 // Outputs (single element; your ssbo_*Level buffers are sizeof(vec4/float/uint))
-layout(std430, binding = 10) writeonly buffer B0LevelBuffer    { vec4  B0Level;    };
-layout(std430, binding = 11) writeonly buffer B1LevelBuffer    { vec4  B1Level;    };
-layout(std430, binding = 12) writeonly buffer Chi2LevelBuffer  { float Chi2Level;  };
-layout(std430, binding = 13) writeonly buffer ValidLevelBuffer { uint  ValidLevel; };
+layout(std430, binding = 6) writeonly buffer BLevelBuffer    { vec4  B[];    }outBLevel;
+layout(std430, binding = 7) writeonly buffer Chi2ValidLevelBuffer  { Chi2ValidData data[];  }outChi2ValidLevel;
 
 shared vec4  sharedB0[256];
 shared vec4  sharedB1[256];
@@ -45,11 +43,11 @@ void main()
         uint ptIdx = baseIdx + p;
         if (ptIdx >= uNPoints) break;
 
-        if (Valid[ptIdx] != 0u)
+        if (inChi2Valid.data[ptIdx].valid != 0u)
         {
-            b0_local   += B0[ptIdx];
-            b1_local   += B1[ptIdx];
-            chi2_local += Chi2[ptIdx];
+            b0_local   += inB.B[ptIdx * 2u + 0u];
+            b1_local   += inB.B[ptIdx * 2u + 1u];
+            chi2_local += inChi2Valid.data[ptIdx].chi2;
             valid_local += 1u;
         }
     }
@@ -82,9 +80,9 @@ void main()
     if (threadID == 0u)
     {
         // gid is 0 for your current dispatch, but this stays correct if you later add more groups
-        B0Level    = sharedB0[0];
-        B1Level    = sharedB1[0];
-        Chi2Level  = sharedChi2[0];
-        ValidLevel = sharedValid[0];
+        outBLevel.B[0] = sharedB0[0];
+        outBLevel.B[1] = sharedB1[0];
+        outChi2ValidLevel.data[0].chi2  = sharedChi2[0];
+        outChi2ValidLevel.data[0].valid = sharedValid[0];
     }
 }

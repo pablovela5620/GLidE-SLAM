@@ -1064,18 +1064,14 @@ private:
     //track cache/data that is stored per level
     struct TrackCache
     {
-        GLuint ssbo_B0          = 0;   //vec4[N]
-        GLuint ssbo_B1          = 0;   //vec4[N]
-        GLuint ssbo_Chi2        = 0;   //float[N]
-        GLuint ssbo_isValid     = 0;   //uint[N]
-        GLuint ssbo_Align       = 0;   //vec4[N]
+        GLuint ssbo_B           = 0;   // struct { vec4 b0; vec4 b1; }[N]
+        GLuint ssbo_Chi2Valid   = 0;   // struct { float chi2; uint valid; }[N]
+        GLuint ssbo_Align       = 0;
         GLuint ssbo_State       = 0;
 
-        //reduction buffers for each level
-        GLuint ssbo_B0Level          = 0; //vec4[1]
-        GLuint ssbo_B1Level          = 0; //vec4[1]
-        GLuint ssbo_Chi2Level        = 0; //float[1]
-        GLuint ssbo_isValidLevel     = 0; //uint[1]
+        // Reduction buffers
+        GLuint ssbo_BLevel          = 0; // struct { vec4 b0; vec4 b1; }[1]
+        GLuint ssbo_Chi2ValidLevel  = 0; // struct { float chi2; uint valid; }[1]
 
     };
     std::vector<TrackCache> m_trackCache;

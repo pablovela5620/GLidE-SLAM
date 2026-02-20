@@ -655,30 +655,22 @@ bool GLideCompute::initializeTrack()
         auto& cacheLevel = m_trackCache[i];
 
         //generate buffers: 1 buffer object, store it in named cache at level L
-        glGenBuffers(1, &cacheLevel.ssbo_B0);
-        glGenBuffers(1, &cacheLevel.ssbo_B1);
-        glGenBuffers(1,&cacheLevel.ssbo_Chi2);
-        glGenBuffers(1,&cacheLevel.ssbo_isValid);
+        glGenBuffers(1, &cacheLevel.ssbo_B);
+        glGenBuffers(1,&cacheLevel.ssbo_Chi2Valid);
         glGenBuffers(1,&cacheLevel.ssbo_Align);
         glGenBuffers(1,&cacheLevel.ssbo_State);
 
-        glGenBuffers(1,&cacheLevel.ssbo_B0Level);
-        glGenBuffers(1,&cacheLevel.ssbo_B1Level);
-        glGenBuffers(1,&cacheLevel.ssbo_Chi2Level);
-        glGenBuffers(1,&cacheLevel.ssbo_isValidLevel);
+        glGenBuffers(1,&cacheLevel.ssbo_BLevel);
+        glGenBuffers(1,&cacheLevel.ssbo_Chi2ValidLevel);
 
         //check if any issues
-        if (cacheLevel.ssbo_B0 == 0
-            || cacheLevel.ssbo_B1 == 0
-            || cacheLevel.ssbo_Chi2 == 0
-            || cacheLevel.ssbo_isValid == 0
+        if (cacheLevel.ssbo_B == 0
+            || cacheLevel.ssbo_Chi2Valid == 0
             || cacheLevel.ssbo_Align == 0
             || cacheLevel.ssbo_State == 0
 
-            || cacheLevel.ssbo_B0Level == 0
-            || cacheLevel.ssbo_B1Level == 0
-            || cacheLevel.ssbo_Chi2Level == 0
-            || cacheLevel.ssbo_isValidLevel == 0)
+            || cacheLevel.ssbo_BLevel == 0
+            || cacheLevel.ssbo_Chi2ValidLevel == 0)
         {
             Logger::LogError("Error at SSBOs generation; initializeTrack.");
             return false;
@@ -686,20 +678,12 @@ bool GLideCompute::initializeTrack()
 
         //Buffers allocation used in shader trackShader
         //b output, vec4 first 4 elements (b0,b1,b2,b3)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B0);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
-
-        //b output, vec4 last 2 elements (b4,b5,0,0)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B1);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * 2*sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
 
         //Chi2 output, floats
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
-
-        //isValid, uint 1 or 0
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValid);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * sizeof(uint32_t)), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2Valid);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(m_maxPoints * (sizeof(float)+sizeof(uint))), nullptr, GL_DYNAMIC_DRAW);
 
         //Align, vec4 (keeps du,dv, valid) for each point
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Align);
@@ -712,20 +696,13 @@ bool GLideCompute::initializeTrack()
 
         //buffer allocation used in reduction shader
         //b output, vec4 first 4 elements (b0,b1,b2,b3)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B0Level);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_BLevel);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(2*sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
 
         //b output, vec4 last 2 elements (b4,b5,0,0)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_B1Level);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(glm::vec4)), nullptr, GL_DYNAMIC_DRAW);
-
         //Chi2 output, floats
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2Level);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
-
-        //isValid, uint 1 or 0
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_isValidLevel);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(uint32_t)), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cacheLevel.ssbo_Chi2ValidLevel);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)((sizeof(float)+sizeof(uint))), nullptr, GL_DYNAMIC_DRAW);
 
     }
 
@@ -843,10 +820,8 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_IN_J,m_preComputeCache[L].ssbo_J);
 
             //WRITE
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B0,m_trackCache[L].ssbo_B0);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B1,m_trackCache[L].ssbo_B1);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_CHI2,m_trackCache[L].ssbo_Chi2);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_ISVALID,m_trackCache[L].ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_B,m_trackCache[L].ssbo_B);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_OUT_CHI2Valid,m_trackCache[L].ssbo_Chi2Valid);
 
             //READ/WRITE
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,TRACK_INOUT_ALIGN,m_trackCache[L].ssbo_Align);
@@ -865,16 +840,12 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
 
             //BIND SSBOs for reduce1TrackShader:
             //READ-ONLY
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_B0,      m_trackCache[L].ssbo_B0);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_B1,      m_trackCache[L].ssbo_B1);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_CHI2,    m_trackCache[L].ssbo_Chi2);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_ISVALID, m_trackCache[L].ssbo_isValid);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_B,      m_trackCache[L].ssbo_B);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_IN_CHI2Valid,    m_trackCache[L].ssbo_Chi2Valid);
 
             //READ-WRITE
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_B0,      m_trackCache[L].ssbo_B0Level);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_B1,      m_trackCache[L].ssbo_B1Level);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_CHI2,    m_trackCache[L].ssbo_Chi2Level);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_ISVALID, m_trackCache[L].ssbo_isValidLevel);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_B,      m_trackCache[L].ssbo_BLevel);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, REDUCE_OUT_CHI2Valid,    m_trackCache[L].ssbo_Chi2ValidLevel);
 
             glDispatchCompute(1,1,1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -891,27 +862,18 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
             glUniform1f(m_uEpsNormSolveTrack, m_epsNorm);
 
             //READ
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_B0LEVEL,m_trackCache[L].ssbo_B0Level);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_B1LEVEL,m_trackCache[L].ssbo_B1Level);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_CHI2LEVEL,m_trackCache[L].ssbo_Chi2Level);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_VALIDLEVEL,m_trackCache[L].ssbo_isValidLevel);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_BLEVEL,m_trackCache[L].ssbo_BLevel);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_CHI2ValidLEVEL,m_trackCache[L].ssbo_Chi2ValidLevel);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_IN_HLEVEL,m_preComputeCache[L].ssbo_HLevel);
-
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_STATE,m_trackCache[L].ssbo_State);
 
             //exception, always write to level 0
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_ACCEPTED,m_trackCache[0].ssbo_State);
-
-
-
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER,SOLVE_INOUT_POSE,m_ssbo_PoseTrack);
-
-
 
             glDispatchCompute(1,1,1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
 
             //Make sure to set the track shader again for next iteration
             glUseProgram(m_trackShader);
@@ -1077,16 +1039,13 @@ bool GLideCompute::shutDown()
     {
         TrackCache& c = m_trackCache[L];
 
-        if (c.ssbo_B0)          { glDeleteBuffers(1, &c.ssbo_B0);          c.ssbo_B0 = 0; }
-        if (c.ssbo_B1)          { glDeleteBuffers(1, &c.ssbo_B1);          c.ssbo_B1 = 0; }
-        if (c.ssbo_Chi2)        { glDeleteBuffers(1, &c.ssbo_Chi2);        c.ssbo_Chi2 = 0; }
-        if (c.ssbo_isValid)     { glDeleteBuffers(1, &c.ssbo_isValid);     c.ssbo_isValid = 0; }
-        if (c.ssbo_Align)       { glDeleteBuffers(1, &c.ssbo_Align);       c.ssbo_Align = 0; }
+        if (c.ssbo_B)          { glDeleteBuffers(1, &c.ssbo_B);                 c.ssbo_B = 0; }
+        if (c.ssbo_Chi2Valid)        { glDeleteBuffers(1, &c.ssbo_Chi2Valid);   c.ssbo_Chi2Valid = 0; }
+        if (c.ssbo_Align)       { glDeleteBuffers(1, &c.ssbo_Align);            c.ssbo_Align = 0; }
+        if (c.ssbo_State)       { glDeleteBuffers(1, &c.ssbo_State);            c.ssbo_State = 0; }
 
-        if (c.ssbo_B0Level)     { glDeleteBuffers(1, &c.ssbo_B0Level);     c.ssbo_B0Level = 0; }
-        if (c.ssbo_B1Level)     { glDeleteBuffers(1, &c.ssbo_B1Level);     c.ssbo_B1Level = 0; }
-        if (c.ssbo_Chi2Level)   { glDeleteBuffers(1, &c.ssbo_Chi2Level);   c.ssbo_Chi2Level = 0; }
-        if (c.ssbo_isValidLevel){ glDeleteBuffers(1, &c.ssbo_isValidLevel);c.ssbo_isValidLevel = 0; }
+        if (c.ssbo_BLevel)     { glDeleteBuffers(1, &c.ssbo_BLevel);     c.ssbo_BLevel = 0; }
+        if (c.ssbo_Chi2ValidLevel){ glDeleteBuffers(1, &c.ssbo_Chi2ValidLevel);c.ssbo_Chi2ValidLevel = 0; }
     }
     m_trackCache.clear();
 
@@ -1129,17 +1088,11 @@ void GLideCompute::clearTrackReduction(const int Level)
     float zf = 0.0f;
     uint32_t zu = 0u;
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_B0Level);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_BLevel);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(glm::vec4), &z4);
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_B1Level);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(glm::vec4), &z4);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_Chi2Level);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_Chi2ValidLevel);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(float), &zf);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_trackCache[Level].ssbo_isValidLevel);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(uint32_t), &zu);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }

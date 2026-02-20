@@ -39,14 +39,14 @@ layout(std430, binding = 2) readonly buffer IBuffer            {float  IRef[]; }
 layout(std430, binding = 3) readonly buffer JBuffer            {float  J[];    } inJ;
 
 //output
-layout(std430, binding = 5) writeonly buffer B0Buffer           {vec4  B0[];    } outB0;
-layout(std430, binding = 6) writeonly buffer B1Buffer           {vec4  B1[];    } outB1;
-layout(std430, binding = 7) writeonly buffer Chi2Buffer         {float Chi2[];  } outChi2;
-layout(std430, binding = 8) writeonly buffer NewValidBuffer     {uint  Valid[]; } outValid;
+layout(std430, binding = 4) writeonly buffer BBuffer            {vec4  B[];    } outB;
+
+struct Chi2ValidData{float chi2;uint valid;};
+layout(std430, binding = 5) writeonly buffer Chi2ValidBuffer    {Chi2ValidData data[];  } outChi2Valid;
 
 //read and write
-layout(std430, binding = 9) buffer AlignBuffer        {vec4  Align[]; } inOutAlign;
-layout(std430, binding =18) buffer PoseBuffer         {mat4  Tcw;} inOutPose;
+layout(std430, binding = 6) buffer AlignBuffer        {vec4  Align[]; } inOutAlign;
+layout(std430, binding = 7) buffer PoseBuffer         {mat4  Tcw;} inOutPose;
 
 //helper functions
 //return bilinear interpolation (used for projection etc.)
@@ -168,10 +168,10 @@ float u, float v, out int outDu, out int outDv, out float bestScore, out float s
 
 void invalidatePoint(uint i)
 {
-    outValid.Valid[i] = 0u;
-    outB0.B0[i] = vec4(0.0);
-    outB1.B1[i] = vec4(0.0);
-    outChi2.Chi2[i] = 0.0;
+    outB.B[i * 2u + 0u] = vec4(0.0);
+    outB.B[i * 2u + 1u] = vec4(0.0);
+    outChi2Valid.data[i].chi2 = 0.0;
+    outChi2Valid.data[i].valid = 0u;
 }
 
 void main()
@@ -379,10 +379,10 @@ void main()
     //write outputs
     if(valid)
     {
-        outB0.B0[ptIndex] = b0;
-        outB1.B1[ptIndex] = b1;
-        outChi2.Chi2[ptIndex] = chi2;
-        outValid.Valid[ptIndex] = 1u;
+        outB.B[ptIndex*2u+0u] = b0;
+        outB.B[ptIndex*2u+1u] = b1;
+        outChi2Valid.data[ptIndex].chi2 = chi2;
+        outChi2Valid.data[ptIndex].valid = 1u;
     }
     else
         invalidatePoint(ptIndex);

@@ -10,19 +10,18 @@ uniform int   uMinMeasurements;   // e.g. 48
 uniform int   uIsLastIteration;        // 0/1 (CPU sets: iteration==maxIters-1)
 uniform float uEpsNorm;           // e.g. 1e-4
 
+struct Chi2ValidData{float chi2;uint valid;};
+
 // Reduced per-iteration outputs (single element)
-layout(std430, binding = 10) readonly buffer B0LevelBuffer    { vec4  B0Level;   };
-layout(std430, binding = 11) readonly buffer B1LevelBuffer    { vec4  B1Level;   };
-layout(std430, binding = 12) readonly buffer Chi2LevelBuffer  { float Chi2Level; };
-layout(std430, binding = 13) readonly buffer ValidLevelBuffer { uint  ValidLevel; };
+layout(std430, binding = 6) readonly buffer BLevelBuffer    { vec4  BLevel[];   } inB;
+layout(std430, binding = 7) readonly buffer Chi2ValidLevelBuffer  { Chi2ValidData data[]; } inChi2ValidLevel;
 
 // Precomputed Hessian for this level (packed 21 floats)
-layout(std430, binding = 14) readonly buffer HLevelBuffer { float H[21]; } inH;
-// Current pose lives on GPU
-layout(std430, binding = 18) buffer PoseBuffer { mat4 Tcw; } poseBuf;
+layout(std430, binding = 3) readonly buffer HLevelBuffer { float H[21]; } inH;
+
 
 // Per-level state (one instance reused per level)
-layout(std430, binding = 15) buffer TrackStateBuffer
+layout(std430, binding = 2) buffer TrackStateBuffer
 {
     mat4  bestPose;        // pose that produced bestChi
     float bestChi;         // min chiMean so far
@@ -39,7 +38,7 @@ layout(std430, binding = 15) buffer TrackStateBuffer
     uint  _pad2;
 } state;
 
-layout(std430, binding = 16) buffer TrackGlobalStateBuffer
+layout(std430, binding = 1) buffer TrackGlobalStateBuffer
 {
     mat4  bestPose;
     float bestChi;
@@ -55,6 +54,9 @@ layout(std430, binding = 16) buffer TrackGlobalStateBuffer
     uint  _pad1;
     uint  _pad2;
 } gstate;
+
+// Current pose lives on GPU
+layout(std430, binding = 0) buffer PoseBuffer { mat4 Tcw; } inOutposeBuf;
 
 
 float A6(int r, int c, float A[36]) { return A[r*6 + c]; }
@@ -184,7 +186,7 @@ void main()
         return;
     }
 
-    uint validPts = ValidLevel;
+    uint validPts = inChi2ValidLevel.data[0].valid;
     int patchArea = uPatchSize * uPatchSize;
     int nMeas = int(validPts) * patchArea;
 
@@ -195,7 +197,7 @@ void main()
         return;
     }
 
-    float chiMean = Chi2Level / float(nMeas);
+    float chiMean = inChi2ValidLevel.data[0].chi2 / float(nMeas);
     if (!finite1(chiMean))
     {
         state.failed = 1u;
@@ -207,7 +209,7 @@ void main()
     state.lastChi = chiMean;
 
 
-    mat4 poseBefore = poseBuf.Tcw;
+    mat4 poseBefore = inOutposeBuf.Tcw;
 
     // best / diverge logic (same as your CPU)
     if (chiMean < state.bestChi)
@@ -222,7 +224,7 @@ void main()
         state.divergeCount++;
         if (state.divergeCount >= 3u)
         {
-            poseBuf.Tcw = state.bestPose; // rollback
+            inOutposeBuf.Tcw = state.bestPose; // rollback
             state.stop     = 1u;
             if (state.hadValid != 0u)
             gstate.anyAccepted = 1u;
@@ -232,12 +234,12 @@ void main()
 
     // build b
     float b[6];
-    b[0] = B0Level.x;
-    b[1] = B0Level.y;
-    b[2] = B0Level.z;
-    b[3] = B0Level.w;
-    b[4] = B1Level.x;
-    b[5] = B1Level.y;
+    b[0] = inB.BLevel[0].x;
+    b[1] = inB.BLevel[0].y;
+    b[2] = inB.BLevel[0].z;
+    b[3] = inB.BLevel[0].w;
+    b[4] = inB.BLevel[1].x;
+    b[5] = inB.BLevel[1].y;
 
     // unpack H
     float Hfull[36];
@@ -282,7 +284,7 @@ void main()
     mat4 dT = se3exp(w, v);
 
     // Match your current GPU code: Tcw = Tcw * se3exp(xi)
-    poseBuf.Tcw = poseBuf.Tcw * dT;
+    inOutposeBuf.Tcw = inOutposeBuf.Tcw * dT;
 
     if (dn < uEpsNorm)
     {
@@ -296,7 +298,7 @@ void main()
     {
         if (state.hadValid != 0u)
         {
-            poseBuf.Tcw = state.bestPose;
+            inOutposeBuf.Tcw = state.bestPose;
         }
         state.stop = 1u;
         return;
