@@ -62,11 +62,11 @@ FrameDirect::FrameDirect(const cv::Mat &imGray, const double &timeStamp, cv::Mat
 {
     // Frame ID
     mnId=nNextId++;
-
-    cv::Mat gray32f;
-    imGray.convertTo(gray32f, CV_32FC1, 1.0/255.0);
-    m_pyrImg.resize(mnLevels);
-    m_pyrImg[0]    = gray32f;
+    //
+    // cv::Mat gray32f;
+    // imGray.convertTo(gray32f, CV_32FC1, 1.0/255.0);
+    // m_pyrImg.resize(mnLevels);
+    // m_pyrImg[0]    = gray32f;
 
     // //build image pyramids
     // auto t0 = std::chrono::high_resolution_clock::now();

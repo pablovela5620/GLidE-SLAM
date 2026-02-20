@@ -65,7 +65,7 @@ struct GLideSettings
 		float cx{320.1};
 		float cy{247.6};
 
-		int nLevels{8};
+		int nLevels{6};
 		int patchSize{7};
 		int maxIterations{5};
 		float scaleFactor{1.2f};

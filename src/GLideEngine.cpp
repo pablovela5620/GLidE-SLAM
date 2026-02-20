@@ -1616,22 +1616,12 @@ void GLideEngine::renderMap3D()
         it->second->render();
     }
 
-    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfxCPU.begin(); it != m_tweenFramesDirectGfxCPU.end()
+    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfx.begin(); it != m_tweenFramesDirectGfx.end()
          ; it++)
     {
         m_mMatrix = it->second->getPose();
         setMatrices();
         basicShader->setUniform("vRGB", m_tweenFrameDirectColor);
-        basicShader->setUniform("mvpMatrix", m_mvpMatrix);
-        it->second->render();
-    }
-
-    for (std::map<uint32_t, FrameGizmo* >::iterator it = m_tweenFramesDirectGfxGPU.begin(); it != m_tweenFramesDirectGfxGPU.end()
-         ; it++)
-    {
-        m_mMatrix = it->second->getPose();
-        setMatrices();
-        basicShader->setUniform("vRGB", glm::vec3(0.0,0.0,0.0));
         basicShader->setUniform("mvpMatrix", m_mvpMatrix);
         it->second->render();
     }
@@ -1875,50 +1865,10 @@ void GLideEngine::updateTweenIndirectFrames()
 
 void GLideEngine::updateTweenDirectFrames()
 {
-    const std::vector<ORB_SLAM2::FrameDirect>& framesCPU = m_map->GetDirectTweenFramesCPU();
-    const std::vector<ORB_SLAM2::FrameDirect>& framesGPU = m_map->GetDirectTweenFramesGPU();
+    const std::vector<ORB_SLAM2::FrameDirect>& framesGPU = m_map->GetDirectTweenFrames();
     glm::mat4 F(1.0f);
     F[1][1] = -1.0f;
     //F[2][2] = -1.0f;
-
-    for (uint32_t n = 0; n < framesCPU.size(); n++)
-    {
-        cv::Mat framePose = framesCPU[n].mTwc;
-
-        glm::mat4 cvPose(1.0f);
-        for (int i = 0; i < 4; i++)
-            for (int j = 0; j < 4; j++)
-                cvPose[j][i] = framePose.at<float>(i, j);
-
-        glm::mat4 pose = F * cvPose * F;
-        //scale
-        pose[3].x *= m_scaleFactor;
-        pose[3].y *= m_scaleFactor;
-        pose[3].z *= m_scaleFactor;
-
-
-
-        uint32_t id = framesCPU[n].mnId;
-
-        //if frame exists already, update pose
-        if (m_tweenFramesDirectGfxCPU.count(id))
-        {
-            m_tweenFramesDirectGfxCPU[id]->setPose(pose);
-        }
-        //otherwise create new
-        else
-        {
-            FrameGizmo* tempFrame = new FrameGizmo(0, pose, id);
-            tempFrame->initialize();
-
-            //if first frame (empty), there should be no parent
-            if (!m_tweenFramesDirectGfxCPU.empty())
-            {
-                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfxCPU.end())->second);
-            }
-            m_tweenFramesDirectGfxCPU[framesCPU[n].mnId] = tempFrame;
-        }
-    }
 
     for (uint32_t n = 0; n < framesGPU.size(); n++)
     {
@@ -1940,9 +1890,9 @@ void GLideEngine::updateTweenDirectFrames()
         uint32_t id = framesGPU[n].mnId;
 
         //if frame exists already, update pose
-        if (m_tweenFramesDirectGfxGPU.count(id))
+        if (m_tweenFramesDirectGfx.count(id))
         {
-            m_tweenFramesDirectGfxGPU[id]->setPose(pose);
+            m_tweenFramesDirectGfx[id]->setPose(pose);
         }
         //otherwise create new
         else
@@ -1951,11 +1901,11 @@ void GLideEngine::updateTweenDirectFrames()
             tempFrame->initialize();
 
             //if first frame (empty), there should be no parent
-            if (!m_tweenFramesDirectGfxGPU.empty())
+            if (!m_tweenFramesDirectGfx.empty())
             {
-                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfxGPU.end())->second);
+                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfx.end())->second);
             }
-            m_tweenFramesDirectGfxGPU[framesGPU[n].mnId] = tempFrame;
+            m_tweenFramesDirectGfx[framesGPU[n].mnId] = tempFrame;
         }
     }
 }
@@ -2104,13 +2054,9 @@ void GLideEngine::shutdown()
         delete pair.second;
     m_keyFramesGfx.clear();
 
-    for (auto& pair : m_tweenFramesDirectGfxCPU)
+    for (auto& pair : m_tweenFramesDirectGfx)
         delete pair.second;
-    m_tweenFramesDirectGfxCPU.clear();
-
-    for (auto& pair : m_tweenFramesDirectGfxGPU)
-        delete pair.second;
-    m_tweenFramesDirectGfxGPU.clear();
+    m_tweenFramesDirectGfx.clear();
 
     for (auto& pair : m_tweenFramesGfx)
         delete pair.second;

@@ -258,6 +258,7 @@ namespace ORB_SLAM2
     cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp)
     {
         mImGray = im;
+        mCurrentTimestamp = timestamp;
         if (mImGray.channels() == 3)
         {
             if (mbRGB)
@@ -277,29 +278,14 @@ namespace ORB_SLAM2
             mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
         else
         {
-            mCurrentFrame = Frame(mImGray, timestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
-                                  mThDepth);
-            // mCurrentDirectFrameCPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+
              mCurrentDirectFrameGPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
         }
-
-        //Logger::LogInfoII("\n Input frame: " + std::to_string(mCurrentFrame.mnId));
 
         //push image to viewer GPU (push 8bit, convert to 32F on GPU)
         mpGPUEngine->updateNewFrame(mCurrentFrame.mnId, mImGray,mLastDirectFrame.mTcw);
 
         Track();
-
-
-        // //write csv file to compare to ground-truth:
-        // std::string indirectTweenFrame = "indFrames.txt";
-        // std::string directTweenFrame = "dFrames.txt";
-        //
-        // //Logger::LogInfoII("\n Timestamp: " + to_string(timestamp));
-        // if (mTweenFrameData.size() > 0) WriteTweenFrameData(indirectTweenFrame, mTweenFrameData, mCurrentFrame.mnId);
-        // if (mDTweenFrameData.size() > 0) WriteTweenFrameData(directTweenFrame, mDTweenFrameData, mCurrentFrame.mnId);
-
-
         return mCurrentFrame.mTcw.clone();
     }
 
@@ -391,7 +377,7 @@ namespace ORB_SLAM2
                         mbUseDirectTracking = true;
                         bOK = true;
 
-                        mpMap->AddDirectTweenFrameCPU(mCurrentDirectFrameGPU);
+                        mpMap->AddDirectTweenFrame(mCurrentDirectFrameGPU);
                         // if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
                         // {
                         //     mpMap->AddDirectTweenFrameGPU(mCurrentDirectFrameGPU);
@@ -401,6 +387,10 @@ namespace ORB_SLAM2
                     }
                     else
                     {
+                        //only build a new indirect frame in case direct failed
+                        mCurrentFrame = Frame(mImGray, mCurrentTimestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
+                      mThDepth);
+
                         if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2)
                         {
                             bOK = TrackReferenceKeyFrame();

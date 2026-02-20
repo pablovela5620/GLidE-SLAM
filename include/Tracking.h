@@ -237,6 +237,7 @@ protected:
 
     list<MapPoint*> mlpTemporalPoints;
 
+    double mCurrentTimestamp{0.0};
 
     std::vector<MapPoint*> mvpLocalDirectInliers;
     FrameDirect mLastDirectFrame;

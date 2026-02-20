@@ -1266,8 +1266,7 @@ private:
     //camera frames
     FrameGizmo* m_currentKeyFrameGfx{nullptr};
     std::map<uint32_t, FrameGizmo*> m_keyFramesGfx;
-    std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfxCPU;
-    std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfxGPU;
+    std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfx;
     std::map<uint32_t, FrameGizmo*> m_tweenFramesGfx;
 
     //point clouds

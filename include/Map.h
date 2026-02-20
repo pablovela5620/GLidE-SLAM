@@ -44,9 +44,7 @@ public:
     void AddKeyFrame(KeyFrame* pKF);
 
     void AddTweenFrame(Frame& pKF);
-    //TODO: Rename/Remove CPU/GPU, only for testing
-    void AddDirectTweenFrameCPU(FrameDirect& pKF);
-    void AddDirectTweenFrameGPU(FrameDirect& pKF);
+    void AddDirectTweenFrame(FrameDirect& pKF);
     void ClearTweenFrames();
 
     void AddMapPoint(MapPoint* pMP);
@@ -59,8 +57,7 @@ public:
     std::vector<KeyFrame*> GetAllKeyFrames();
 
     const std::vector<Frame>& GetTweenFrames();
-    const std::vector<FrameDirect>& GetDirectTweenFramesCPU();
-    const std::vector<FrameDirect>& GetDirectTweenFramesGPU();
+    const std::vector<FrameDirect>& GetDirectTweenFrames();
 
     std::vector<MapPoint*> GetAllMapPoints();
     std::vector<MapPoint*> GetReferenceMapPoints();
