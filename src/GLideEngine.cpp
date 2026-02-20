@@ -2548,10 +2548,9 @@ std::string Shader::readFile(const std::string &path)
     {
         Logger::LogError("Error! File not found or could not be opened! " + path );
         return "";
-    } else
-    {
-        Logger::LogError("Shader File found: " + path);
     }
+
+    Logger::LogInfoI("Shader File found: " + path);
 
 
     std::stringstream ss;

@@ -94,8 +94,6 @@ public:
     Frame mCurrentFrame;
     cv::Mat mImGray;
 
-    //TODO: Rename/Remove CPU/GPU, only for testing
-    FrameDirect mCurrentDirectFrameCPU;
     FrameDirect mCurrentDirectFrameGPU;
 
     // Initialization Variables (Monocular)
@@ -146,18 +144,9 @@ protected:
     bool NeedNewKeyFrame();
     void CreateNewKeyFrame();
 
-    bool trackDirectIC(FrameDirect *newFrame, FrameDirect* oldFrame, const std::vector<DirectTrackCache> &dtCache, bool useMotion, float& chi2);
-
-    bool trackPrecompute(const Frame& frame, std::vector<DirectTrackCache> &dtCache);
     bool SwitchToIndirect(float chi2);
-    int trackDirectInliers(const DirectTrackCache& cache, const cv::Mat& pose, const float mseThreshold);
-    void FetchPosandRot(const double timeStamp, const cv::Mat &R, const cv::Mat &t, std::vector<double>& output);
-    void WriteTweenFrameData(std::string& path, const std::vector<double>& data,const unsigned long int frameNumber);
     void updateDirectReference();
     bool NeedNewDirectRef();
-    void compareDirectVsIndirect();
-    void LogCPUvsGPU(int frameId, const cv::Mat& poseCPU, const cv::Mat& poseGPU,
-                           float chi2CPU, float chi2GPU);
 
     // In case of performing only localization, this flag is true when there are no matches to
     // points in the map. Still tracking will continue if there are enough matches with temporal points.
