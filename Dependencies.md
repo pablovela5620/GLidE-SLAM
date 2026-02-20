@@ -25,17 +25,12 @@ ORB-SLAM2's g2o library uses Eigen alignment patterns that cause crashes on:
 
 **Symptom**: `double free or corruption` or segmentation fault during bundle adjustment
 
-**Solution**: Add `-DEIGEN_DONT_ALIGN_STATICALLY` to compiler flags when building g2o:
+**Solution**: The `build.sh` script automatically includes the fix. Just run:
 ```bash
-cd Thirdparty/g2o
-rm -rf build lib
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-DEIGEN_DONT_ALIGN_STATICALLY"
-make -j4
-cd ../../..
+./build.sh
 ```
 
-Then rebuild GLidE-SLAM normally with `./build.sh`.
+No manual intervention needed - the Eigen alignment flag is applied automatically during the g2o build.
 
 ---
 
