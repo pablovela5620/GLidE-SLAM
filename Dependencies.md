@@ -14,6 +14,29 @@ sudo apt install -y \
   libboost-all-dev
 ```
 
+## Known Issues & Fixes
+
+### Eigen Alignment Crashes (GCC 12+, ARM platforms)
+
+ORB-SLAM2's g2o library uses Eigen alignment patterns that cause crashes on:
+- Modern compilers (GCC 12+, GCC 14+)
+- ARM architectures (Raspberry Pi, Radxa, etc.)
+- Some x86_64 systems with strict alignment
+
+**Symptom**: `double free or corruption` or segmentation fault during bundle adjustment
+
+**Solution**: Add `-DEIGEN_DONT_ALIGN_STATICALLY` to compiler flags when building g2o:
+```bash
+cd Thirdparty/g2o
+rm -rf build lib
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-DEIGEN_DONT_ALIGN_STATICALLY"
+make -j4
+cd ../../..
+```
+
+Then rebuild GLidE-SLAM normally with `./build.sh`.
+
 ---
 
 # List of Known Dependencies
