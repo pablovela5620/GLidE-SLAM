@@ -1655,7 +1655,7 @@ void GLideEngine::renderMap3D()
     m_mMatrix = m_predictionFrameGfx->getPose();
     m_mMatrix = m_mMatrix * glm::scale(glm::mat4(1.0f), glm::vec3(s));
     setMatrices();
-    basicShader->setUniform("vRGB", glm::vec3(1.0f,1.0f,1.0f));
+    basicShader->setUniform("vRGB", glm::vec3(0.0f,0.0f,0.0f));
     basicShader->setUniform("mvpMatrix", m_mvpMatrix);
     m_predictionFrameGfx->render();
 
@@ -1760,9 +1760,9 @@ void GLideEngine::updateFrames3D()
 
 void GLideEngine::updatePredictionFrames()
 {
-    const ORB_SLAM2::FrameDirect& predictionFrame = m_map->GetFramePrediction();
+    const ORB_SLAM2::FrameDirect* predictionFrame = m_map->GetFramePrediction();
     glm::mat4 pose;
-    convertCVPose2CG(predictionFrame.GetPoseInverse(), pose);
+    convertCVPose2CG(predictionFrame->GetPoseInverse(), pose);
     m_predictionFrameGfx->setPose(pose);
 }
 

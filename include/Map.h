@@ -23,6 +23,7 @@
 
 #include "MapPoint.h"
 #include "KeyFrame.h"
+#include "Frame.h"
 #include <set>
 
 #include <mutex>
@@ -40,6 +41,7 @@ class Map
 {
 public:
     Map();
+    ~Map(){if (mFramePrediction) delete mFramePrediction; mFramePrediction=nullptr;};
 
     void AddKeyFrame(KeyFrame* pKF);
 
@@ -83,7 +85,7 @@ public:
     uint32_t GetFramesUpdateNumber() const { return maFramesUpdateNumber.load(); }
 
     void UpdateFramePrediction(const cv::Mat& pose);
-    const FrameDirect& GetFramePrediction();
+    const FrameDirect* GetFramePrediction();
 protected:
     std::set<MapPoint*> mspMapPoints;
     std::set<KeyFrame*> mspKeyFrames;
@@ -91,7 +93,7 @@ protected:
     std::vector<Frame> mspTweenFrames;
 
     std::vector<FrameDirect> mspTweenDirectFrames;
-    FrameDirect mFramePrediction;
+    FrameDirect* mFramePrediction{nullptr};
 
     std::vector<MapPoint*> mvpReferenceMapPoints;
 

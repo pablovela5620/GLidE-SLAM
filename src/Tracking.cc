@@ -252,6 +252,9 @@ namespace ORB_SLAM2
     {
         mImGray = im;
         mCurrentTimestamp = timestamp;
+        mdt = timestamp - mPreviousTimestamp;
+
+
         bool warmup = mnFrameCounter < mnWarmUpFrames;
 
         if (mImGray.channels() == 3)
@@ -270,10 +273,11 @@ namespace ORB_SLAM2
 
 
         if (mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)
+        {
             mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
+        }
         else
         {
-            mdt = timestamp - mPreviousTimestamp;
 
             if (!warmup)
             {
@@ -298,7 +302,7 @@ namespace ORB_SLAM2
         float beta = 1.0f;
         float gamma = 0.05f;
 
-        if (warmup)
+        if (warmup && (!(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)))
         {
             glm::mat4 m;
             for (size_t r = 0; r < 4;++r)
@@ -314,6 +318,8 @@ namespace ORB_SLAM2
             mpMap->UpdateFramePrediction(motionPoseCV);
             mpMap->NotifyFramesUpdated();
         }
+
+        mPreviousTimestamp = timestamp;
 
         return mCurrentFrame.mTcw.clone();
     }

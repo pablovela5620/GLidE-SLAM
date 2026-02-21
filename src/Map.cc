@@ -27,6 +27,9 @@ namespace ORB_SLAM2
 
 Map::Map():mnMaxKFid(0),mnBigChangeIdx(0)
 {
+    mFramePrediction = new FrameDirect();
+    cv::Mat pose = cv::Mat::ones(4,4,CV_32F);
+    mFramePrediction->SetPose(pose);
 }
 
 void Map::AddKeyFrame(KeyFrame *pKF)
@@ -163,10 +166,10 @@ void Map::clear()
 
 void Map::UpdateFramePrediction(const cv::Mat &pose)
 {
-    mFramePrediction.SetPose(pose);
+    mFramePrediction->SetPose(pose);
 }
 
-const FrameDirect & Map::GetFramePrediction()
+const FrameDirect* Map::GetFramePrediction()
 {
     unique_lock<mutex> lock(mMutexMap);
     return mFramePrediction;
