@@ -230,7 +230,7 @@ protected:
 
     list<MapPoint*> mlpTemporalPoints;
 
-    int mnWarmUpFrames{10};
+    int mnWarmUpFrames{100};
     double mCurrentTimestamp{0.0};
 
     std::vector<MapPoint*> mvpLocalDirectInliers;

@@ -298,9 +298,9 @@ namespace ORB_SLAM2
         Track();
 
 
-        float alpha = 0.3f;
-        float beta = 1.0f;
-        float gamma = 0.05f;
+        float alpha = 0.2f;
+        float beta = 0.1f;
+        float gamma = 0.01f;
 
         if (warmup && (!(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)))
         {
@@ -308,7 +308,23 @@ namespace ORB_SLAM2
             for (size_t r = 0; r < 4;++r)
                 for (size_t c = 0; c < 4; ++c)
                     m[c][r] = mCurrentFrame.mTcw.at<float>(r, c);
+
+            // Get prediction BEFORE update
+            glm::mat4 T_pred = mMotionModel.predict(mdt);
+
+            // Compute innovation (difference between prediction and measurement)
+            MotionModel::Twist delta = mMotionModel.innovation(T_pred, m);
+
+
+            float trans_error = glm::length(delta.t);
+            float rot_error = glm::length(delta.w);
+
+            std::cout << "Frame " << mnFrameCounter
+                      << " - Trans error: " << trans_error << " m"
+                      << " - Rot error: " << glm::degrees(rot_error) << " deg" << std::endl;
+
             mMotionModel.update(m,mdt,alpha,beta,gamma);
+
 
             glm::mat4 motionPose = mMotionModel.T;
             cv::Mat motionPoseCV = cv::Mat::zeros(4,4,CV_32F);
