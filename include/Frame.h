@@ -41,32 +41,6 @@ namespace ORB_SLAM2
 class MapPoint;
 class KeyFrame;
 
-static constexpr float SCALE_FACTOR = 1.2f;
-static constexpr int NLEVELS_DIRECT = 8;
-static constexpr int PATCH_SIZE = 7;
-static constexpr float PATCH_CENTER = (PATCH_SIZE - 1) * 0.5f;
-static constexpr int PATCH_AREA = PATCH_SIZE * PATCH_SIZE;
-
-struct ImageData
-{
-    std::vector<cv::Mat> pyrImg;
-};
-
-struct DirectPointData
-{
-    MapPoint* mapPoint{nullptr};
-    std::array<Eigen::Matrix<float,1,6>, PATCH_AREA> J;
-    std::array<float, PATCH_AREA> I;
-};
-
-struct DirectTrackCache
-{
-    Eigen::Matrix<float,6,6> H;
-    std::vector<DirectPointData> pointData;
-};
-
-
-
 
 class Frame
 {
@@ -229,11 +203,6 @@ public:
 
     static bool mbInitialComputations;
 
-    int mnLevels{NLEVELS_DIRECT};
-    std::vector<cv::Mat> m_pyrImg;
-
-
-
 private:
 
     // Undistort keypoints given OpenCV distortion parameters.
@@ -291,10 +260,6 @@ class FrameDirect
         cv::Mat mRwc;
         cv::Mat mtwc;
         cv::Mat mOw; //==mtwc
-
-        std::vector<cv::Mat> m_pyrImg;
-
-        int mnLevels{NLEVELS_DIRECT};
 
     private:
 

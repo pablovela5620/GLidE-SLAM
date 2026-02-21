@@ -75,13 +75,6 @@ namespace ORB_SLAM2
         mCx = cx;
         mCy = cy;
 
-        mScaleFactors.resize(NLEVELS_DIRECT);
-        mScaleFactors[0] = 1.0f;
-        for (int i = 1; i < NLEVELS_DIRECT; i++)
-        {
-            mScaleFactors[i] = mScaleFactors[i - 1] * SCALE_FACTOR;
-        }
-
         cv::Mat DistCoef(4, 1,CV_32F);
         DistCoef.at<float>(0) = fSettings["Camera.k1"];
         DistCoef.at<float>(1) = fSettings["Camera.k2"];
@@ -278,9 +271,18 @@ namespace ORB_SLAM2
             mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
         else
         {
-             mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
-            //push image to viewer GPU (push 8bit, convert to 32F on GPU)
-            mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
+
+            if (mnFrameCounter > mnWarmUpFrames)
+            {
+                mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+                //(push 8bit, convert to 32F on GPU)
+                mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
+            }
+            else
+            {
+                mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
+            }
+
         }
 
 

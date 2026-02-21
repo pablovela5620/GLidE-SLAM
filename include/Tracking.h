@@ -229,6 +229,7 @@ protected:
 
     list<MapPoint*> mlpTemporalPoints;
 
+    int mnWarmUpFrames{10};
     double mCurrentTimestamp{0.0};
 
     std::vector<MapPoint*> mvpLocalDirectInliers;
@@ -239,9 +240,8 @@ protected:
     bool mbDirectTrackCPUOk{false};
     bool mbDirectTrackGPUOk{false};
     bool mbDirectTrackRecovery{false};
-    std::vector<DirectTrackCache> m_directTrackCache;
-    unsigned long int mpPrevDirectRefID{0};
-    unsigned long int mnLastIndirectFrameId{0};
+    uint32_t mpPrevDirectRefID{0};
+    uint32_t mnLastIndirectFrameId{0};
     int mMaxFramesDirect{10};
     float mLastDirectChi2CPU{0.0f};
     float mLastDirectChi2GPU{0.0f};
@@ -250,7 +250,7 @@ protected:
     float mCx{0.0f};
     float mCy{0.0f};
 
-    std::vector<float> mScaleFactors;
+    uint32_t mnFrameCounter{0};
 
 };
 
