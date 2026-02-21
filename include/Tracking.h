@@ -94,7 +94,7 @@ public:
     Frame mCurrentFrame;
     cv::Mat mImGray;
 
-    FrameDirect mCurrentDirectFrameGPU;
+    FrameDirect mCurrentDirectFrame;
 
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;
@@ -148,6 +148,9 @@ protected:
     void updateDirectReference();
     bool NeedNewDirectRef();
 
+
+    void LogFrameType(int frameID, bool isDirect, float chi2, double timestamp);
+
     // In case of performing only localization, this flag is true when there are no matches to
     // points in the map. Still tracking will continue if there are enough matches with temporal points.
     // In that case we are doing visual odometry. The system will try to do relocalization to recover
@@ -180,7 +183,7 @@ protected:
     System* mpSystem;
     
     //Drawers
-    GLideEngine* mpGPUEngine;
+    GLideEngine* mpGLideEngine;
     //FrameDrawer* mpFrameDrawer;
     //MapDrawer* mpMapDrawer;
 

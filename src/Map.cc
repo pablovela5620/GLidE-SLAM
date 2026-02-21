@@ -43,8 +43,6 @@ void Map::AddTweenFrame(Frame& pKF)
     mspTweenFrames.push_back(pKF);
 }
 
-    //TODO: Rename/Remove CPU/GPU, only for testing
-
 void Map::AddDirectTweenFrame(FrameDirect& pKF)
 {
     unique_lock<mutex> lock(mMutexMap);

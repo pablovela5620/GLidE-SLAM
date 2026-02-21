@@ -52,7 +52,7 @@ namespace ORB_SLAM2
                                                                          mpKeyFrameDB(pKFDB),
                                                                          mpInitializer(
                                                                              static_cast<Initializer *>(NULL)),
-                                                                         mpSystem(pSys), mpGPUEngine(NULL),
+                                                                         mpSystem(pSys), mpGLideEngine(NULL),
                                                                          mpMap(pMap), mnLastRelocFrameId(0)
     {
         // Load camera parameters from settings file
@@ -185,7 +185,7 @@ namespace ORB_SLAM2
 
     void Tracking::SetViewer(GLideEngine *pViewer)
     {
-        mpGPUEngine = pViewer;
+        mpGLideEngine = pViewer;
     }
 
     cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRectRight, const double &timestamp)
@@ -278,9 +278,9 @@ namespace ORB_SLAM2
             mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
         else
         {
-             mCurrentDirectFrameGPU = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+             mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
             //push image to viewer GPU (push 8bit, convert to 32F on GPU)
-            mpGPUEngine->updateNewFrame(mCurrentDirectFrameGPU.mnId, mImGray,mLastDirectFrame.mTcw);
+            mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
         }
 
 
@@ -329,57 +329,28 @@ namespace ORB_SLAM2
                     // Local Mapping might have changed some MapPoints tracked in last frame
                     CheckReplacedInLastFrame();
 
-
-                    //Perform direct tracking (CPU)
-                    // auto cpuStart = std::chrono::high_resolution_clock::now();
-                    // bool bDirectTrackRecovery = mCurrentDirectFrameCPU.mnId < mpPrevDirectRefID + 3;
-                    // mbDirectTrackCPUOk = trackDirectIC(&mCurrentDirectFrameCPU, &mLastDirectFrame, m_directTrackCache,
-                    //                                      false, mLastDirectChi2CPU);
-                    // auto cpuEnd = std::chrono::high_resolution_clock::now();
-                    // float cpuMs = std::chrono::duration<float, std::milli>(cpuEnd - cpuStart).count();
-                    // Logger::LogInfoIII("CPU trackDirectIC: " + std::to_string(cpuMs) + " ms");
-                    //
-                    // cv::Mat resultPoseCPU;
                     cv::Mat resultPoseGPU;
                     int gpuN;
 
                     //By this time, the pose should be ready!
-                    mbDirectTrackGPUOk = mpGPUEngine->getTrackResult(mCurrentDirectFrameGPU.mnId, resultPoseGPU, mLastDirectChi2GPU, gpuN);
-
-                    // if (mbDirectTrackCPUOk)
-                    // {
-                    //     //compare poses and Chi2
-                    //     resultPoseCPU = mCurrentDirectFrameCPU.mTcw.clone();
-                    //
-                    // }
+                    mbDirectTrackGPUOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGPU, mLastDirectChi2GPU, gpuN);
 
                     if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
                     {
-                        mCurrentDirectFrameGPU.SetPose(resultPoseGPU);
+                        mCurrentDirectFrame.SetPose(resultPoseGPU);
                     }
 
-
-                    // Log only when BOTH succeeded
-                    // if (mbDirectTrackCPUOk && mbDirectTrackGPUOk && !resultPoseGPU.empty())
-                    // {
-                    //     LogCPUvsGPU(mCurrentFrame.mnId, resultPoseCPU, resultPoseGPU, mLastDirectChi2CPU, mLastDirectChi2GPU);
-                    // }
-
-
+                    //is this a good new frame estimate? Is it time to switch to indirect?
                     bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2GPU);
                     mbUseDirectTracking = false;
                     if (mbDirectTrackGPUOk && !bSwitchToIndirect)
                     {
                         // Tween frame: use direct pose, skip TrackLocalMap
-                        mCurrentFrame.SetPose(mCurrentDirectFrameGPU.mTcw);
+                        mCurrentFrame.SetPose(mCurrentDirectFrame.mTcw);
                         mbUseDirectTracking = true;
                         bOK = true;
 
-                        mpMap->AddDirectTweenFrame(mCurrentDirectFrameGPU);
-                        // if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
-                        // {
-                        //     mpMap->AddDirectTweenFrameGPU(mCurrentDirectFrameGPU);
-                        // }
+                        mpMap->AddDirectTweenFrame(mCurrentDirectFrame);
                         mpMap->NotifyFramesUpdated();
 
                     }
@@ -485,12 +456,14 @@ namespace ORB_SLAM2
                     {
                         std::vector<double> directTweenFrameData;
                         mDTweenFrameData = directTweenFrameData;
+                        LogFrameType(mCurrentDirectFrame.mnId, true, mLastDirectChi2GPU, mCurrentDirectFrame.mTimeStamp);
                     }
                     else
                     {
                         std::vector<double> indirectTweenFrameData;
                         mTweenFrameData = indirectTweenFrameData;
                         bOK = TrackLocalMap();
+                        LogFrameType(mCurrentFrame.mnId, false, mLastDirectChi2GPU, mCurrentFrame.mTimeStamp);
                     }
                 }
             }
@@ -519,7 +492,7 @@ namespace ORB_SLAM2
                     cv::Mat LastTwc = cv::Mat::eye(4, 4,CV_32F);
                     mLastDirectFrame.mRwc.copyTo(LastTwc.rowRange(0, 3).colRange(0, 3));
                     mLastDirectFrame.mtwc.copyTo(LastTwc.rowRange(0, 3).col(3));
-                    mVelocityDirect = mCurrentDirectFrameGPU.mTcw * LastTwc;
+                    mVelocityDirect = mCurrentDirectFrame.mTcw * LastTwc;
                 } else
                     mVelocityDirect = cv::Mat();
             } else
@@ -608,7 +581,7 @@ namespace ORB_SLAM2
             }
 
             if (mbDirectTrackGPUOk)
-                mLastDirectFrame = FrameDirect(mCurrentDirectFrameGPU);
+                mLastDirectFrame = FrameDirect(mCurrentDirectFrame);
         }
 
         // Store frame pose information to retrieve the complete camera trajectory afterwards.
@@ -631,39 +604,27 @@ namespace ORB_SLAM2
 
     bool Tracking::SwitchToIndirect(float chi2)
     {
-        // Check if local mapping is busy
         if (mpLocalMapper->isStopped() || mpLocalMapper->stopRequested())
             return false;
 
-        const int nKFs = mpMap->KeyFramesInMap();
+        // Emergency: tracking is very bad, switch immediately
+        const bool bTrackingBad = (chi2 > 0.004f);
+        if (bTrackingBad)
+            return true;
 
-        // Do not insert keyframes if not enough frames have passed
-        if (mCurrentDirectFrameGPU.mnId < mpPrevDirectRefID + mMaxFramesDirect && nKFs > mMaxFramesDirect)
+        // Must wait minimum frames before considering switch
+        if (mCurrentDirectFrame.mnId < mpPrevDirectRefID + mMinFrames)
             return false;
 
-        // --- Temporal conditions (from original) ---
-        const bool c1a = mCurrentDirectFrameGPU.mnId >= mpPrevDirectRefID + mMaxFramesDirect;
-        const bool c1b = (mCurrentDirectFrameGPU.mnId >= mpPrevDirectRefID + mMinFrames &&
-                          !mpLocalMapper->KeyframesInQueue());
+        // Force switch at max baseline
+        const bool bWideBaseline = mCurrentDirectFrame.mnId >= mpPrevDirectRefID + mMaxFramesDirect;
 
-        // --- Chi2-based quality conditions (replaces map point stats) ---
-        const bool bTrackingWeak = (chi2 > 0.004f); // Emergency: tracking degrading fast
-        const bool bQualityDegrading = (chi2 > 0.0025f); // Quality dropping vs reference
+        // Allow quality-based switch if mapper is idle
+        const bool bMapperIdle = !mpLocalMapper->KeyframesInQueue();
+        const bool bTrackingDegraded = (chi2 > 0.0035f);  // Relax threshold slightly
 
-        std::string c1aString = (c1a) ? "true" : "false";
-        std::string c1bString = (c1b) ? "true" : "false";
-        std::string c1cString = (bTrackingWeak) ? "true" : "false";
-        std::string c2String = (bQualityDegrading) ? "true" : "false";
-
-
-        if ((c1a || c1b || bTrackingWeak) && bQualityDegrading)
+        if (bWideBaseline || (bMapperIdle && bTrackingDegraded))
         {
-            // Logger::LogInfoI("Switch to Indirect tracking: " + std::to_string(mCurrentFrame.mnId) +
-            //                               ", More than max frames=" + c1aString +
-            //                               ", More than min frames=" + c1bString +
-            //                               ", Tracking too weak=" + c1cString +
-            //                               ", Tracking degraded=" + c2String);
-            //mpPrevDirectRefID = mCurrentDirectFrameGPU.mnId;
             return true;
         }
         return false;
@@ -689,18 +650,34 @@ namespace ORB_SLAM2
             mapPointsGLM.emplace_back(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2), 1.0f);
         }
 
-        mpGPUEngine->updateRefFrame(mImGray, mapPointsGLM, mLastDirectFrame.mTcw);
+        mpGLideEngine->updateRefFrame(mImGray, mapPointsGLM, mLastDirectFrame.mTcw);
     }
 
     bool Tracking::NeedNewDirectRef()
     {
-        if (mpPrevDirectRefID + mMaxFramesDirect < mCurrentDirectFrameGPU.mnId)
+        if (mpPrevDirectRefID + mMaxFramesDirect < mCurrentDirectFrame.mnId)
         {
             updateDirectReference();
             return true;
         }
         return false;
     }
+
+    void Tracking::LogFrameType(int frameID, bool isDirect, float chi2, double timestamp)
+    {
+        static std::ofstream logFile("frame_types.txt", std::ios::app);
+        static bool headerWritten = false;
+
+        if (!headerWritten)
+        {
+            logFile << "FrameID,Type,Chi2,Timestamp" << std::endl;
+            headerWritten = true;
+        }
+
+        logFile << frameID << "," << (isDirect ? "direct" : "indirect") << ","
+                << chi2 << "," << timestamp << std::endl;
+    }
+
 
     void Tracking::StereoInitialization()
     {
@@ -939,7 +916,7 @@ namespace ORB_SLAM2
         float maxRange = std::max({rangeX, rangeY, rangeZ});
         float sceneTargetSize = 50.0f;
 
-        mpGPUEngine->setScaleFactor(sceneTargetSize/maxRange);
+        mpGLideEngine->setScaleFactor(sceneTargetSize/maxRange);
 
         mpLocalMapper->InsertKeyFrame(pKFini);
         mpLocalMapper->InsertKeyFrame(pKFcur);
@@ -969,7 +946,7 @@ namespace ORB_SLAM2
 
         //Initialize direct tracking
 
-        mCurrentDirectFrameGPU = FrameDirect(mCurrentFrame);
+        mCurrentDirectFrame = FrameDirect(mCurrentFrame);
         updateDirectReference();
 
 
@@ -1768,9 +1745,9 @@ namespace ORB_SLAM2
     void Tracking::Reset()
     {
         cout << "System Reseting" << endl;
-        if (mpGPUEngine)
+        if (mpGLideEngine)
         {
-            mpGPUEngine->exit();
+            mpGLideEngine->exit();
         }
 
         // Reset Local Mapping
