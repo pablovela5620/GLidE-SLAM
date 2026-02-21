@@ -1,0 +1,184 @@
+//
+// Created by caps on 2/21/26.
+//
+
+#ifndef GLIDE_SLAM_MOTIONMODEL_H
+#define GLIDE_SLAM_MOTIONMODEL_H
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+struct MotionModel
+{
+    struct Twist
+    {
+        glm::vec3 t;  // linear velocity/acceleration
+        glm::vec3 w;  // angular velocity/acceleration
+
+        Twist() : t(0,0,0), w(0,0,0) {}
+    };
+
+    bool ready{false};
+
+    // State
+    glm::mat4 T;   // current pose
+    Twist v;       // velocity
+    Twist a;       // acceleration
+
+    MotionModel() : T(glm::mat4(1.0f)) {}
+
+    glm::mat3 skew(const glm::vec3& w)
+    {
+        glm::mat3 W(0.0f);
+        W[0][1] = -w.z;
+        W[0][2] =  w.y;
+        W[1][0] =  w.z;
+        W[1][2] = -w.x;
+        W[2][0] = -w.y;
+        W[2][1] =  w.x;
+        return W;
+    }
+
+    glm::mat4 se3exp(const glm::vec3& w, const glm::vec3& v)
+    {
+        float th = glm::length(w);
+        glm::mat3 I = glm::mat3(1.0f);
+        glm::mat3 W = skew(w);
+        glm::mat3 W2 = W * W;
+
+        glm::mat3 R = I;
+        glm::mat3 V = I;
+
+        if (th > 1e-8f)
+        {
+            float s_over_th   = std::sin(th) / th;
+            float one_mc_over = (1.0f - std::cos(th)) / (th*th);
+            float th_ms_over  = (th - std::sin(th)) / (th*th*th);
+
+            R = I + s_over_th * W + one_mc_over * W2;
+            V = I + one_mc_over * W + th_ms_over * W2;
+        }
+        else
+        {
+            R = I + W;
+            V = I + 0.5f * W + (1.0f/6.0f) * W2;
+        }
+
+        glm::vec3 t = V * v;
+
+        glm::mat4 T = glm::mat4(1.0f);
+        T[0][0]=R[0][0]; T[1][0]=R[0][1]; T[2][0]=R[0][2];
+        T[0][1]=R[1][0]; T[1][1]=R[1][1]; T[2][1]=R[1][2];
+        T[0][2]=R[2][0]; T[1][2]=R[2][1]; T[2][2]=R[2][2];
+        T[3][0]=t.x;     T[3][1]=t.y;     T[3][2]=t.z;
+        return T;
+    }
+
+    // SE(3) exponential map
+    glm::mat4 expSE3(const Twist& xi)
+    {
+        return se3exp(xi.w, xi.t);
+    }
+
+    // SE(3) logarithm map
+    Twist logSE3(const glm::mat4& T_in)
+    {
+        Twist xi;
+
+        glm::mat3 R = glm::mat3(T_in);
+        glm::vec3 t = glm::vec3(T_in[3]);
+
+        float trace = R[0][0] + R[1][1] + R[2][2];
+        float theta = acos((trace - 1.0f) / 2.0f);
+
+        if (theta < 1e-8f)
+        {
+            xi.w = glm::vec3(0,0,0);
+            xi.t = t;
+            return xi;
+        }
+
+        glm::mat3 W = (theta / (2.0f * sin(theta))) * (R - glm::transpose(R));
+        xi.w = glm::vec3(W[2][1], W[0][2], W[1][0]);
+
+        glm::mat3 I = glm::mat3(1.0f);
+        glm::mat3 W2 = W * W;
+        float c1 = (1.0f - cos(theta)) / (theta * theta);
+        float c2 = (theta - sin(theta)) / (theta * theta * theta);
+        glm::mat3 V_inv = I - 0.5f * W + (1.0f/(theta*theta)) * (1.0f - (theta*sin(theta))/(2.0f*(1.0f-cos(theta)))) * W2;
+
+        xi.t = V_inv * t;
+
+        return xi;
+    }
+
+    glm::mat4 predict(float dt)
+    {
+        Twist xi;
+        xi.t = v.t * dt + 0.5f * a.t * dt * dt;
+        xi.w = v.w * dt + 0.5f * a.w * dt * dt;
+
+        return T * expSE3(xi);
+    }
+
+    Twist innovation(const glm::mat4& T_pred, const glm::mat4& T_meas)
+    {
+        glm::mat4 dT = glm::inverse(T_pred) * T_meas;
+        return logSE3(dT);
+    }
+
+    bool gate(const Twist& delta, float dt)
+    {
+        float trans = glm::length(delta.t);
+        float rot = glm::length(delta.w);
+
+        float maxTrans = 2.0f * dt;  // 2 m/s
+        float maxRot = glm::radians(180.0f) * dt;  // 180 deg/s
+
+        return (trans <= maxTrans) && (rot <= maxRot);
+    }
+
+    void update(const glm::mat4& T_meas, float dt, float alpha, float beta, float gamma)
+    {
+        glm::mat4 T_pred = predict(dt);
+        Twist delta = innovation(T_pred, T_meas);
+
+        if (!gate(delta, dt))
+        {
+            T = T_pred;
+            return;
+        }
+
+        // Pose correction
+        Twist corr;
+        corr.t = alpha * delta.t;
+        corr.w = alpha * delta.w;
+        T = T_pred * expSE3(corr);
+
+        // Measured velocity
+        Twist v_meas;
+        v_meas.t = delta.t / dt;
+        v_meas.w = delta.w / dt;
+
+        // Measured acceleration
+        Twist a_meas;
+        a_meas.t = (v_meas.t - v.t) / dt;
+        a_meas.w = (v_meas.w - v.w) / dt;
+
+        // Update velocity
+        v.t = (1.0f - beta) * (v.t + a.t * dt) + beta * v_meas.t;
+        v.w = (1.0f - beta) * (v.w + a.w * dt) + beta * v_meas.w;
+
+        // Update acceleration
+        a.t = (1.0f - gamma) * a.t + gamma * a_meas.t;
+        a.w = (1.0f - gamma) * a.w + gamma * a_meas.w;
+    }
+
+    void reset(const glm::mat4& T_init)
+    {
+        T = T_init;
+        v = Twist();
+        a = Twist();
+    }
+};
+#endif //GLIDE_SLAM_MOTIONMODEL_H

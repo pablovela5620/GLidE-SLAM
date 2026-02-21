@@ -46,14 +46,14 @@ void Map::AddTweenFrame(Frame& pKF)
 void Map::AddDirectTweenFrame(FrameDirect& pKF)
 {
     unique_lock<mutex> lock(mMutexMap);
-    mspTweenDirectFramesGPU.push_back(pKF);
+    mspTweenDirectFrames.push_back(pKF);
 }
 
 void Map::ClearTweenFrames()
 {
     unique_lock<mutex> lock(mMutexMap);
     mspTweenFrames.clear();
-    mspTweenDirectFramesCPU.clear();
+    mspTweenDirectFrames.clear();
 }
 
 void Map::AddMapPoint(MapPoint *pMP)
@@ -113,7 +113,7 @@ const std::vector<Frame>& Map::GetTweenFrames()
 const std::vector<FrameDirect>& Map::GetDirectTweenFrames()
 {
     unique_lock<mutex> lock(mMutexMap);
-    return mspTweenDirectFramesGPU;
+    return mspTweenDirectFrames;
 }
 
 vector<MapPoint*> Map::GetAllMapPoints()
@@ -161,4 +161,14 @@ void Map::clear()
     mvpKeyFrameOrigins.clear();
 }
 
+void Map::UpdateFramePrediction(const cv::Mat &pose)
+{
+    mFramePrediction.SetPose(pose);
+}
+
+const FrameDirect & Map::GetFramePrediction()
+{
+    unique_lock<mutex> lock(mMutexMap);
+    return mFramePrediction;
+}
 } //namespace ORB_SLAM

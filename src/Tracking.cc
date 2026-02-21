@@ -252,6 +252,8 @@ namespace ORB_SLAM2
     {
         mImGray = im;
         mCurrentTimestamp = timestamp;
+        bool warmup = mnFrameCounter < mnWarmUpFrames;
+
         if (mImGray.channels() == 3)
         {
             if (mbRGB)
@@ -271,8 +273,9 @@ namespace ORB_SLAM2
             mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
         else
         {
+            mdt = timestamp - mPreviousTimestamp;
 
-            if (mnFrameCounter > mnWarmUpFrames)
+            if (!warmup)
             {
                 mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
                 //(push 8bit, convert to 32F on GPU)
@@ -283,11 +286,35 @@ namespace ORB_SLAM2
                 mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
             }
 
+            ++mnFrameCounter;
         }
 
 
 
         Track();
+
+
+        float alpha = 0.3f;
+        float beta = 1.0f;
+        float gamma = 0.05f;
+
+        if (warmup)
+        {
+            glm::mat4 m;
+            for (size_t r = 0; r < 4;++r)
+                for (size_t c = 0; c < 4; ++c)
+                    m[c][r] = mCurrentFrame.mTcw.at<float>(r, c);
+            mMotionModel.update(m,mdt,alpha,beta,gamma);
+
+            glm::mat4 motionPose = mMotionModel.T;
+            cv::Mat motionPoseCV = cv::Mat::zeros(4,4,CV_32F);
+            for (size_t r = 0; r < 4;++r)
+                for (size_t c = 0; c < 4; ++c)
+                    motionPoseCV.at<float>(r, c) = motionPose[c][r];
+            mpMap->UpdateFramePrediction(motionPoseCV);
+            mpMap->NotifyFramesUpdated();
+        }
+
         return mCurrentFrame.mTcw.clone();
     }
 
@@ -948,9 +975,15 @@ namespace ORB_SLAM2
 
         //Initialize direct tracking
 
-        mCurrentDirectFrame = FrameDirect(mCurrentFrame);
-        updateDirectReference();
+        //we might actually skip this from now on if using motion model filer
+        // mCurrentDirectFrame = FrameDirect(mCurrentFrame);
+        // updateDirectReference();
 
+        glm::mat4 m;
+        for (size_t r = 0; r < 4;++r)
+            for (size_t c = 0; c < 4; ++c)
+                m[c][r] = mCurrentFrame.mTcw.at<float>(r, c);
+        mMotionModel.reset(m);
 
         mState = OK;
     }

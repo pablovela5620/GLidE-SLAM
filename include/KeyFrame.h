@@ -188,12 +188,6 @@ public:
     const int mnMaxY;
     const cv::Mat mK;
 
-
-    std::vector<cv::Mat> m_pyrImg;
-    std::vector<cv::Mat> m_pyrIx;
-    std::vector<cv::Mat> m_pyrIy;
-    std::vector<float> m_pyrScale;
-
     // The following variables need to be accessed trough a mutex to be thread safe.
 protected:
 

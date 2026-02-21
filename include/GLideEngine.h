@@ -1158,9 +1158,11 @@ public:
     void updateFrames3D();
 
     void updateMapPoints();
+
     void updateKFrames();
     void updateTweenIndirectFrames();
     void updateTweenDirectFrames();
+    void updatePredictionFrames();
 
     void updateIndirectFeatureMatches(const cv::Mat &image, const std::vector<cv::KeyPoint> &kpts1,const std::vector<cv::KeyPoint> &kpts2, const std::vector<float> &d);
 
@@ -1193,6 +1195,7 @@ private:
     void initializeMapPoints();
     void initializeCamera();
 
+    void convertCVPose2CG(const cv::Mat& cvPose, glm::mat4& cgPose) const;
     void printVersions();
     void PollEvents();
 
@@ -1265,9 +1268,14 @@ private:
     //mapping window graphic elements
     //camera frames
     FrameGizmo* m_currentKeyFrameGfx{nullptr};
+
+    //TODO: Debuggin only, remove!
+    FrameGizmo* m_predictionFrameGfx{nullptr};
+
     std::map<uint32_t, FrameGizmo*> m_keyFramesGfx;
     std::map<uint32_t, FrameGizmo*> m_tweenFramesDirectGfx;
     std::map<uint32_t, FrameGizmo*> m_tweenFramesGfx;
+
 
     //point clouds
     PointCloud* m_mapPointsGfx{nullptr};

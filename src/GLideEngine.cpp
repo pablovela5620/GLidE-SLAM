@@ -1236,6 +1236,11 @@ bool GLideEngine::initialize()
     m_currentKeyFrameGfx = new FrameGizmo(0, pose, 0);
     m_currentKeyFrameGfx->initialize();
 
+    m_predictionFrameGfx = new FrameGizmo(0, pose, 0);
+    m_predictionFrameGfx->initialize();
+
+
+
     //initialize GPUCompute
     m_gpuCompute = new GLideCompute(m_GPUEngineSettings);
 
@@ -1646,6 +1651,17 @@ void GLideEngine::renderMap3D()
     basicShader->setUniform("vRGB", m_currentKeyFrameColor);
     basicShader->setUniform("mvpMatrix", m_mvpMatrix);
     m_currentKeyFrameGfx->render();
+
+    m_mMatrix = m_predictionFrameGfx->getPose();
+    m_mMatrix = m_mMatrix * glm::scale(glm::mat4(1.0f), glm::vec3(s));
+    setMatrices();
+    basicShader->setUniform("vRGB", glm::vec3(1.0f,1.0f,1.0f));
+    basicShader->setUniform("mvpMatrix", m_mvpMatrix);
+    m_predictionFrameGfx->render();
+
+
+
+
     glUseProgram(0);
 
     auto &pointShader = m_shaders.find("pointShader")->second;
@@ -1735,10 +1751,19 @@ void GLideEngine::updateFrames3D()
 {
     if (!m_stop)
     {
+        updatePredictionFrames();
         updateTweenIndirectFrames();
         updateTweenDirectFrames();
         updateKFrames();
     }
+}
+
+void GLideEngine::updatePredictionFrames()
+{
+    const ORB_SLAM2::FrameDirect& predictionFrame = m_map->GetFramePrediction();
+    glm::mat4 pose;
+    convertCVPose2CG(predictionFrame.GetPoseInverse(), pose);
+    m_predictionFrameGfx->setPose(pose);
 }
 
 void GLideEngine::updateKFrames()
@@ -1748,26 +1773,12 @@ void GLideEngine::updateKFrames()
 
     uint32_t lastKeyframeID = std::numeric_limits<uint32_t>::min();
     glm::mat4 lastKeyframePose = glm::mat4(1.0f);
+    glm::mat4 pose;
 
-    //use to convert: computer vision to computer graphics!
-    glm::mat4 F(1.0f);
-    F[1][1] = -1.0f;
 
     for (uint32_t n = 0; n < frames.size(); n++)
     {
-        cv::Mat framePose = frames[n]->GetPoseInverse();
-
-        glm::mat4 cvPose(1.0f);
-        for (int i = 0; i < 4; i++)
-            for (int j = 0; j < 4; j++)
-                cvPose[j][i] = framePose.at<float>(i, j);
-
-        glm::mat4 pose = F * cvPose * F;
-        //scale
-        pose[3].x *= m_scaleFactor;
-        pose[3].y *= m_scaleFactor;
-        pose[3].z *= m_scaleFactor;
-
+        convertCVPose2CG(frames[n]->GetPoseInverse(), pose);
 
         uint32_t id = frames[n]->mnFrameId;
 
@@ -1821,24 +1832,12 @@ void GLideEngine::updateKFrames()
 void GLideEngine::updateTweenIndirectFrames()
 {
     const std::vector<ORB_SLAM2::Frame>& frames = m_map->GetTweenFrames();
-    glm::mat4 F(1.0f);
-    F[1][1] = -1.0f;
-    //F[2][2] = -1.0f;
+    glm::mat4 pose;
+
 
     for (uint32_t n = 0; n < frames.size(); n++)
     {
-        cv::Mat framePose = frames[n].mTwc;
-
-        glm::mat4 cvPose(1.0f);
-        for (int i = 0; i < 4; i++)
-            for (int j = 0; j < 4; j++)
-                cvPose[j][i] = framePose.at<float>(i, j);
-
-        glm::mat4 pose = F * cvPose * F;
-        //scale
-        pose[3].x *= m_scaleFactor;
-        pose[3].y *= m_scaleFactor;
-        pose[3].z *= m_scaleFactor;
+        convertCVPose2CG(frames[n].mTwc, pose);
 
         uint32_t id = frames[n].mnId;
 
@@ -1866,26 +1865,12 @@ void GLideEngine::updateTweenIndirectFrames()
 void GLideEngine::updateTweenDirectFrames()
 {
     const std::vector<ORB_SLAM2::FrameDirect>& framesGPU = m_map->GetDirectTweenFrames();
-    glm::mat4 F(1.0f);
-    F[1][1] = -1.0f;
-    //F[2][2] = -1.0f;
+    glm::mat4 pose;
+
 
     for (uint32_t n = 0; n < framesGPU.size(); n++)
     {
-        cv::Mat framePose = framesGPU[n].mTwc;
-
-        glm::mat4 cvPose(1.0f);
-        for (int i = 0; i < 4; i++)
-            for (int j = 0; j < 4; j++)
-                cvPose[j][i] = framePose.at<float>(i, j);
-
-        glm::mat4 pose = F * cvPose * F;
-        //scale
-        pose[3].x *= m_scaleFactor;
-        pose[3].y *= m_scaleFactor;
-        pose[3].z *= m_scaleFactor;
-
-
+        convertCVPose2CG(framesGPU[n].mTwc, pose);
 
         uint32_t id = framesGPU[n].mnId;
 
@@ -2061,6 +2046,20 @@ void GLideEngine::shutdown()
     for (auto& pair : m_tweenFramesGfx)
         delete pair.second;
     m_tweenFramesGfx.clear();
+
+    if (m_currentKeyFrameGfx)
+    {
+        delete m_currentKeyFrameGfx;
+        m_currentKeyFrameGfx = nullptr;
+    }
+
+    //TODO: Debuggin only, remove!
+    if (m_predictionFrameGfx)
+    {
+        delete m_predictionFrameGfx;
+        m_predictionFrameGfx = nullptr;
+    }
+
 
     delete m_trackLinesGfx;
     delete m_canvasIndirectTracking;
@@ -2398,6 +2397,24 @@ void GLideEngine::initializeCamera()
     bool follow = m_GPUEngineSettings->gpuEngineParams.cameraFollow;
     const float followDistance = m_GPUEngineSettings->gpuEngineParams.followDistance;
     m_activeCamera->setFollow(follow, followDistance);
+}
+
+void GLideEngine::convertCVPose2CG(const cv::Mat &cvPose, glm::mat4 &cgPose) const
+{
+    //use to convert: computer vision to computer graphics!
+    glm::mat4 F(1.0f);
+    F[1][1] = -1.0f;
+
+    glm::mat4 cvPose02(1.0f);
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            cvPose02[j][i] = cvPose.at<float>(i, j);
+
+    cgPose = F * cvPose02 * F;
+    //scale
+    cgPose[3].x *= m_scaleFactor;
+    cgPose[3].y *= m_scaleFactor;
+    cgPose[3].z *= m_scaleFactor;
 }
 
 void GLideEngine::setMatrices()

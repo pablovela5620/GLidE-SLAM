@@ -35,6 +35,7 @@
 #include"ORBextractor.h"
 #include "Initializer.h"
 #include "System.h"
+#include "MotionModel.h"
 
 #include <mutex>
 class GLideEngine;
@@ -251,6 +252,9 @@ protected:
     float mCy{0.0f};
 
     uint32_t mnFrameCounter{0};
+    double mPreviousTimestamp{0.0};
+    double mdt;
+    MotionModel mMotionModel;
 
 };
 

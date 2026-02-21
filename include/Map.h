@@ -81,15 +81,17 @@ public:
     void NotifyFramesUpdated(){ maFramesUpdateNumber.fetch_add(1); }
     uint32_t GetMapPointsUpdateNumber() const { return maMapPointUpdateNumber.load(); }
     uint32_t GetFramesUpdateNumber() const { return maFramesUpdateNumber.load(); }
+
+    void UpdateFramePrediction(const cv::Mat& pose);
+    const FrameDirect& GetFramePrediction();
 protected:
     std::set<MapPoint*> mspMapPoints;
     std::set<KeyFrame*> mspKeyFrames;
 
     std::vector<Frame> mspTweenFrames;
 
-    //TODO: Rename/Remove CPU/GPU, only for testing
-    std::vector<FrameDirect> mspTweenDirectFramesCPU;
-    std::vector<FrameDirect> mspTweenDirectFramesGPU;
+    std::vector<FrameDirect> mspTweenDirectFrames;
+    FrameDirect mFramePrediction;
 
     std::vector<MapPoint*> mvpReferenceMapPoints;
 
