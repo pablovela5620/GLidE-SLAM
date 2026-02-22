@@ -254,7 +254,7 @@ namespace ORB_SLAM2
         mCurrentTimestamp = timestamp;
         mdt = timestamp - mPreviousTimestamp;
 
-        if (mnFrameCounter > mnWarmUpFrames)
+        if (mGLidEState == GLidEStates::WARMUP && mnFrameCounter >= mnWarmUpFrames)
         {
             mGLidEState = GLidEStates::DIRECT_TRACK;
         }
