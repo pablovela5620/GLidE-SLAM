@@ -306,35 +306,20 @@ namespace ORB_SLAM2
 
         if (mGLidEState == GLidEStates::WARMUP && (!(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)))
         {
-            glm::mat4 m;
-            for (size_t r = 0; r < 4;++r)
-                for (size_t c = 0; c < 4; ++c)
-                    m[c][r] = mCurrentFrame.mTcw.at<float>(r, c);
-
-            // Get prediction BEFORE update
-            glm::mat4 T_pred = mMotionModel.predict(mdt);
-
-            // Compute innovation (difference between prediction and measurement)
-            MotionModel::Twist delta = mMotionModel.innovation(T_pred, m);
-
-
-            float trans_error = glm::length(delta.t);
-            float rot_error = glm::length(delta.w);
-
-            std::cout << "Frame " << mnCurrentFrameID
-                      << " - Trans error: " << trans_error << " m"
-                      << " - Rot error: " << glm::degrees(rot_error) << " deg" << std::endl;
+         mMotionModel.checkResidual(mdt,mCurrentFrame.mTcw);
 
 
             float zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
-            mMotionModel.update(m,mdt,alpha,beta,gamma,zRef);
+            mMotionModel.update(mCurrentFrame.mTcw,mdt,zRef);
 
 
             glm::mat4 motionPose = mMotionModel.T;
+
             cv::Mat motionPoseCV = cv::Mat::zeros(4,4,CV_32F);
             for (size_t r = 0; r < 4;++r)
                 for (size_t c = 0; c < 4; ++c)
                     motionPoseCV.at<float>(r, c) = motionPose[c][r];
+
             mpMap->UpdateFramePrediction(motionPoseCV);
             mpMap->NotifyFramesUpdated();
         }
@@ -441,7 +426,7 @@ namespace ORB_SLAM2
                     }
                     else
                     {
-                        if (mGLidEState != GLidEStates::RECOVER)
+                        if (mGLidEState != GLidEStates::RECOVER && mGLidEState != GLidEStates::WARMUP)
                         {
                             mRecoveryFrameNumber = mnCurrentFrameID;
                             mGLidEState = GLidEStates::RECOVER;

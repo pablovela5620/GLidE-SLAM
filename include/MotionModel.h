@@ -173,20 +173,28 @@ struct MotionModel
         return (trans <= maxTrans) && (rot <= maxRot);
     }
 
-    void update(const glm::mat4& T_meas, float dt, float zRef)
+    void update(const cv::Mat& pose, float dt, float zRef)
     {
         if (dt < 1e-6f)
             return;
 
+
+        glm::mat4 m;
+        for (size_t r = 0; r < 4; ++r)
+            for (size_t c = 0; c < 4; ++c)
+                m[c][r] = pose.at<float>((int)r, (int)c);
+
         if (!ready)
         {
-            reset(T_meas);
+            reset(m);
             ready = true;
             return;
         }
 
+
+
         glm::mat4 T_pred = predict(dt);
-        Twist delta = innovation(T_pred, T_meas);
+        Twist delta = innovation(T_pred, m);
 
         if (!gate(delta, dt,zRef))
         {
@@ -226,6 +234,27 @@ struct MotionModel
         float maxAngAcc = glm::radians(720.0f);
         if (glm::length(a.w) > maxAngAcc)
             a.w = glm::normalize(a.w) * maxAngAcc;
+    }
+
+    void checkResidual(float mdt, const cv::Mat& pose)
+    {
+        glm::mat4 m;
+        for (size_t r = 0; r < 4; ++r)
+            for (size_t c = 0; c < 4; ++c)
+                m[c][r] = pose.at<float>((int)r, (int)c);
+
+        // Get prediction BEFORE update
+        glm::mat4 T_pred = predict(mdt);
+
+        // Compute innovation (difference between prediction and measurement)
+        MotionModel::Twist delta = innovation(T_pred, m);
+
+        float trans_error = glm::length(delta.t);
+        float rot_error = glm::length(delta.w);
+
+        std::cout << " - Trans error: " << trans_error << " unitless"
+                  << " - Rot error: " << glm::degrees(rot_error) << " deg" << std::endl;
+
     }
 
     void reset(const glm::mat4& T_init)
