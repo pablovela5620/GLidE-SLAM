@@ -19,11 +19,11 @@ struct MotionModel
         m_maxT = maxT;
         m_maxA = maxA;
     }
-    float m_alpha = 0.2f;
-    float m_beta = 0.1f;
-    float m_gamma = 0.01f;
-    float m_maxT = 2.0f;
-    float m_maxA = 90.0f;
+    float m_alpha = 0.6f;
+    float m_beta = 0.4f;
+    float m_gamma = 0.25f;
+    float m_maxT = 4.0f;
+    float m_maxA = 135.0f;
 
     struct Twist
     {
