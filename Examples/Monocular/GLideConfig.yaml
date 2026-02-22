@@ -9,7 +9,7 @@ Viewer.width: 1024
 Viewer.height: 768
 Viewer.scaleFactor: 1
 Viewer.cameraFollow: 1
-Viewer.followDistance: 5
+Viewer.followDistance: 8
 
 Viewer.currentKeyFrameColor: [0.0,1.0,0.0]
 Viewer.allKeyFrameColor: [ 0.0,0.0,1.0]

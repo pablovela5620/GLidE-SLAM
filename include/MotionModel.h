@@ -6,11 +6,9 @@
 #define GLIDE_SLAM_MOTIONMODEL_H
 
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/constants.hpp>
 #include <algorithm>
 #include <cmath>
-
+#include <opencv2/core.hpp>
 struct MotionModel
 {
     void setParams(float alpha, float beta, float gamma, float maxT, float maxA)
@@ -25,7 +23,7 @@ struct MotionModel
     float m_beta = 0.1f;
     float m_gamma = 0.01f;
     float m_maxT = 2.0f;
-    float m_maxA = 30.0f;
+    float m_maxA = 90.0f;
 
     struct Twist
     {
@@ -236,25 +234,34 @@ struct MotionModel
             a.w = glm::normalize(a.w) * maxAngAcc;
     }
 
-    void checkResidual(float mdt, const cv::Mat& pose)
+    void checkResidual(float dt, const cv::Mat& pose, float zRef)
     {
-        glm::mat4 m;
+        if (dt <= 1e-6f || pose.empty() || pose.type() != CV_32FC1)
+            return;
+
+        glm::mat4 T_meas;
         for (size_t r = 0; r < 4; ++r)
             for (size_t c = 0; c < 4; ++c)
-                m[c][r] = pose.at<float>((int)r, (int)c);
+                T_meas[c][r] = pose.at<float>((int)r, (int)c);
 
-        // Get prediction BEFORE update
-        glm::mat4 T_pred = predict(mdt);
+        glm::mat4 T_pred = predict(dt);
+        Twist delta = innovation(T_pred, T_meas);
 
-        // Compute innovation (difference between prediction and measurement)
-        MotionModel::Twist delta = innovation(T_pred, m);
+        // monocular: translation is in arbitrary scale units -> log both raw and normalized
+        const float trans = glm::length(delta.t);
+        const float transNorm = trans / std::max(zRef, 1e-6f);
+        const float rotDeg = glm::degrees(glm::length(delta.w));
 
-        float trans_error = glm::length(delta.t);
-        float rot_error = glm::length(delta.w);
+        const float gateT = m_maxT * dt;
+        const float gateRDeg = glm::degrees(glm::radians(m_maxA) * dt);
 
-        std::cout << " - Trans error: " << trans_error << " unitless"
-                  << " - Rot error: " << glm::degrees(rot_error) << " deg" << std::endl;
-
+        std::cout << "Motion residual: "
+                  << "trans=" << trans
+                  << " transNorm=" << transNorm
+                  << " rotDeg=" << rotDeg
+                  << " gateT=" << gateT
+                  << " gateRDeg=" << gateRDeg
+                  << std::endl;
     }
 
     void reset(const glm::mat4& T_init)

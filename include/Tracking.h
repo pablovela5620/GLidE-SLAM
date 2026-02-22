@@ -150,8 +150,8 @@ protected:
     bool NeedNewDirectRef();
 
 
-    void updateMotion();
-    void getPrediction();
+    void updateMotion(uint32_t frameID);
+    void checkResidual(float dt, const cv::Mat& pose, float zRef);
     void LogFrameType(int frameID, bool isDirect, float chi2, double timestamp);
 
     // In case of performing only localization, this flag is true when there are no matches to
@@ -255,10 +255,10 @@ protected:
     bool mbDirectTrackOk{false};
 
     bool mbRecoveryDirectTracking{false};
-    uint32_t mMaxRecoveryFrames{3};
+    uint32_t mMaxRecoveryFrames{1};
     uint32_t mRecoveryFrameNumber{0};
 
-    uint32_t mMaxFramesDirect{10};
+    uint32_t mMaxFramesDirect{5};
 
     float mLastDirectChi2{0.0f};
 

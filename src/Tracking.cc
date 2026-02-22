@@ -159,11 +159,6 @@ namespace ORB_SLAM2
         }
 
 
-        const std::string indirectTweenFrame = "indFrames.txt";
-        const std::string directTweenFrame = "dFrames.txt";
-
-        std::ofstream(indirectTweenFrame.c_str(), std::ios::out | std::ios::trunc).close();
-        std::ofstream(directTweenFrame.c_str(), std::ios::out | std::ios::trunc).close();
     }
 
     void Tracking::SetLocalMapper(LocalMapping *pLocalMapper)
@@ -300,17 +295,12 @@ namespace ORB_SLAM2
         Track();
 
 
-        float alpha = 0.2f;
-        float beta = 0.1f;
-        float gamma = 0.01f;
-
         if (mGLidEState == GLidEStates::WARMUP && (!(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)))
         {
-         mMotionModel.checkResidual(mdt,mCurrentFrame.mTcw);
-
-
-            float zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
-            mMotionModel.update(mCurrentFrame.mTcw,mdt,zRef);
+            float zRef = 1.0f;
+            if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+            mMotionModel.checkResidual((float)mdt, mCurrentFrame.mTcw, zRef);
+            mMotionModel.update(mCurrentFrame.mTcw, (float)mdt, zRef);
 
 
             glm::mat4 motionPose = mMotionModel.T;
@@ -382,11 +372,22 @@ namespace ORB_SLAM2
                         {
                             Logger::LogWarning("Direct Tracknig Failed");
                         }
+                        else
+                        {
+                            Logger::LogWarning("running direct tracking");
+                        }
                         bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                         if (bSwitchToIndirect)
                         {
-                            Logger::LogWarning("Switch to direct");
+                            Logger::LogWarning("Switch to indirect");
 
+                        }
+                        else
+                        {
+                            Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
+                            float zRef = 1.0f;
+                            if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                            updateMotion(mCurrentDirectFrame.mnId);
                         }
                     }
 
@@ -394,14 +395,38 @@ namespace ORB_SLAM2
                     {
                         if (mnCurrentFrameID >= mRecoveryFrameNumber + mMaxRecoveryFrames)
                         {
+                            updateDirectReference();
+
                             mCurrentDirectFrame = FrameDirect(mImGray, mCurrentTimestamp, mK, mDistCoef);
+
                             //(push 8bit, convert to 32F on GPU)
                             mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
 
                             mGLidEState = GLidEStates::DIRECT_TRACK;
                             //By this time, the pose should be ready!
                             mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
+                            if (!mbDirectTrackOk)
+                            {
+                                Logger::LogWarning("Recovery done: Switching to direct Tracknig Failed");
+                            }
+                            else
+                            {
+                                Logger::LogWarning("Recovery done: Switching to direct tracking");
+                            }
                             bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
+                            if (bSwitchToIndirect)
+                            {
+                                Logger::LogWarning("Switch to indirect");
+
+                            }
+                            else
+                            {
+                                Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
+                                float zRef = 1.0f;
+                                if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                                mMotionModel.checkResidual((float)mdt, mCurrentDirectFrame.mTcw, zRef);
+                                updateMotion(mCurrentDirectFrame.mnId);
+                            }
                         }
                     }
 
@@ -540,6 +565,11 @@ namespace ORB_SLAM2
                         mTweenFrameData = indirectTweenFrameData;
                         bOK = TrackLocalMap();
                         LogFrameType(mCurrentFrame.mnId, false, mLastDirectChi2, mCurrentFrame.mTimeStamp);
+
+                        Logger::LogWarning("Checking residual indirect frame: " + std::to_string(mCurrentFrame.mnId));
+                        float zRef = 1.0f;
+                        if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                        updateMotion(mCurrentFrame.mnId);
                     }
                 }
             }
@@ -738,6 +768,32 @@ namespace ORB_SLAM2
             return true;
         }
         return false;
+    }
+
+    void Tracking::updateMotion(uint32_t frameID)
+    {
+
+        if (mGLidEState != GLidEStates::WARMUP && mState == OK && !mCurrentFrame.mTcw.empty())
+        {
+            float zRef = 1.0f;
+            if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+            mMotionModel.checkResidual((float)mdt, mCurrentFrame.mTcw, zRef);
+            mMotionModel.update(mCurrentFrame.mTcw, (float)mdt, zRef);
+            glm::mat4 motionPose = mMotionModel.T;
+
+            cv::Mat motionPoseCV = cv::Mat::zeros(4,4,CV_32F);
+            for (size_t r = 0; r < 4;++r)
+                for (size_t c = 0; c < 4; ++c)
+                    motionPoseCV.at<float>(r, c) = motionPose[c][r];
+
+            mpMap->UpdateFramePrediction(motionPoseCV);
+            mpMap->NotifyFramesUpdated();
+        }
+    }
+
+    void Tracking::checkResidual(float dt, const cv::Mat& pose, float zRef)
+    {
+        mMotionModel.checkResidual(dt, pose,zRef);
     }
 
     void Tracking::LogFrameType(int frameID, bool isDirect, float chi2, double timestamp)
