@@ -254,7 +254,7 @@ namespace ORB_SLAM2
         mCurrentTimestamp = timestamp;
         mdt = timestamp - mPreviousTimestamp;
 
-        if (mGLidEState == GLidEStates::WARMUP && mnFrameCounter >= mnWarmUpFrames)
+        if (mGLidEState == GLidEStates::WARMUP && mnCurrentFrameID >= mnWarmUpFrames)
         {
             mGLidEState = GLidEStates::DIRECT_TRACK;
         }
@@ -283,7 +283,7 @@ namespace ORB_SLAM2
 
             if (mGLidEState == GLidEStates::DIRECT_TRACK)
             {
-                mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
+                mCurrentDirectFrame = FrameDirect(mImGray, mCurrentTimestamp, mK, mDistCoef);
                 //(push 8bit, convert to 32F on GPU)
                 mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
             }
@@ -292,7 +292,7 @@ namespace ORB_SLAM2
                 mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
             }
 
-            ++mnFrameCounter;
+            ++mnCurrentFrameID;
         }
 
 
@@ -321,7 +321,7 @@ namespace ORB_SLAM2
             float trans_error = glm::length(delta.t);
             float rot_error = glm::length(delta.w);
 
-            std::cout << "Frame " << mnFrameCounter
+            std::cout << "Frame " << mnCurrentFrameID
                       << " - Trans error: " << trans_error << " m"
                       << " - Rot error: " << glm::degrees(rot_error) << " deg" << std::endl;
 
@@ -386,22 +386,38 @@ namespace ORB_SLAM2
 
                     cv::Mat resultPoseGLidE;
                     int gpuN;
+                    bool bSwitchToIndirect = false;
+                    mbDirectTrackOk = false;
 
                     if (mGLidEState == GLidEStates::DIRECT_TRACK)
                     {
                         //By this time, the pose should be ready!
                         mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
+                        if (!mbDirectTrackOk)
+                        {
+                            Logger::LogWarning("Direct Tracknig Failed");
+                        }
+                        bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
+                        if (bSwitchToIndirect)
+                        {
+                            Logger::LogWarning("Switch to direct");
+
+                        }
                     }
 
                     if (mGLidEState == GLidEStates::RECOVER)
                     {
-                        if (mnFrameCounter >= mpPrevDirectRefID + mMaxRecoveryFrames)
+                        if (mnCurrentFrameID >= mRecoveryFrameNumber + mMaxRecoveryFrames)
                         {
+                            mCurrentDirectFrame = FrameDirect(mImGray, mCurrentTimestamp, mK, mDistCoef);
+                            //(push 8bit, convert to 32F on GPU)
+                            mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
+
                             mGLidEState = GLidEStates::DIRECT_TRACK;
                             //By this time, the pose should be ready!
                             mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
+                            bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                         }
-
                     }
 
 
@@ -411,7 +427,6 @@ namespace ORB_SLAM2
                     }
 
                     //is this a good new frame estimate? Is it time to switch to indirect?
-                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                     mbUseDirectTracking = false;
                     if (mbDirectTrackOk && !bSwitchToIndirect)
                     {
@@ -426,8 +441,12 @@ namespace ORB_SLAM2
                     }
                     else
                     {
-                        //only build a new indirect frame in case direct failed
-                        mGLidEState = GLidEStates::RECOVER;
+                        if (mGLidEState != GLidEStates::RECOVER)
+                        {
+                            mRecoveryFrameNumber = mnCurrentFrameID;
+                            mGLidEState = GLidEStates::RECOVER;
+                        }
+
                         mCurrentFrame = Frame(mImGray, mCurrentTimestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
                       mThDepth);
 
@@ -617,6 +636,7 @@ namespace ORB_SLAM2
                     if (NeedNewKeyFrame())
                     {
                         CreateNewKeyFrame();
+                        updateDirectReference();
                     }
                     //only for direct tracking
                     else
@@ -727,7 +747,7 @@ namespace ORB_SLAM2
 
     bool Tracking::NeedNewDirectRef()
     {
-        if (mpPrevDirectRefID + mMaxFramesDirect < mCurrentDirectFrame.mnId)
+        if (mCurrentDirectFrame.mnId > mpPrevDirectRefID + mMaxFramesDirect)
         {
             updateDirectReference();
             return true;

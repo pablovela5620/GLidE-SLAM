@@ -230,7 +230,7 @@ protected:
     {
         WARMUP=0,
         DIRECT_TRACK=1,
-        RECOVER=1,
+        RECOVER=2,
     };
 
     GLidEStates mGLidEState{GLidEStates::WARMUP};
@@ -254,6 +254,7 @@ protected:
 
     bool mbRecoveryDirectTracking{false};
     uint32_t mMaxRecoveryFrames{3};
+    uint32_t mRecoveryFrameNumber{0};
 
     uint32_t mMaxFramesDirect{10};
 
@@ -264,7 +265,7 @@ protected:
     float mCx{0.0f};
     float mCy{0.0f};
 
-    uint32_t mnFrameCounter{0};
+    uint32_t mnCurrentFrameID{0};
     double mPreviousTimestamp{0.0};
     double mdt;
     MotionModel mMotionModel;

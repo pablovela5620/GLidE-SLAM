@@ -45,6 +45,13 @@ bool GLideCompute::initialize()
 
     m_invScaleFactors.resize(m_nLevels);
     m_invScaleFactors[0] = 1.0f;
+
+    m_maxPoints = m_GLideSettings->directTrackParams.maxPoints;
+    m_maxIterations = m_GLideSettings->directTrackParams.maxIterations;
+    m_epsNorm = m_GLideSettings->directTrackParams.epsNorm;
+    m_minPoints = m_GLideSettings->directTrackParams.minPoints;
+
+
     for (int i = 1; i < m_nLevels; i++)
     {
         m_invScaleFactors[i] = (m_invScaleFactors[i - 1]/m_scaleFactor);
@@ -768,12 +775,6 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     //uLevel and uK uniforms are level-dependent, so they are set in loop
     //uIteration is per iteration dependent, set in iteration loop
 
-    outChi2 = 0.0f;
-    outN = 0;
-
-    float finalChi2Mean = std::numeric_limits<float>::max();
-    bool anyLevelOk = false;
-    bool anyAccepted = false;
 
     glUseProgram(m_trackShader);
     //uniforms independent of iteration/Level
@@ -902,16 +903,55 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
         for (int c = 0; c < 4; ++c)
             Tcw.at<float>(r,c) = poseResult[c*4 + r];
 
+
+
+    outChi2 = 0.0f;
+    outN = 0;
+
+    bool anyLevelOk = false;
+    bool anyAccepted = false;
+
+
     pose = Tcw.clone();
     outChi2 = trackStateResult.bestChi;
     outN = int(trackStateResult.bestValidPts) * m_patchArea;
     anyLevelOk = (trackStateResult.failed == 0u) && (trackStateResult.hadValid != 0u);
     anyAccepted = (trackStateResult.anyAccepted != 0u);
-    bool ok = (trackStateResult.failed == 0u) &&
-              anyAccepted &&
-              (trackStateResult.bestChi <= 0.0045f);
+    bool ok = (trackStateResult.failed == 0u) && anyAccepted && (trackStateResult.bestChi <= 0.0045f);
 
-    anyLevelOk = ok;
+
+    if (!ok)
+    {
+        const bool goodChi = (trackStateResult.bestChi <= 0.0045f);
+        const bool okButNoAccept = (trackStateResult.failed == 0u) &&
+                                   (trackStateResult.hadValid != 0u) &&
+                                   goodChi &&
+                                   (trackStateResult.anyAccepted == 0u);
+
+        if (okButNoAccept)
+        {
+            Logger::LogWarning(
+                "GPU track() FAIL frame=" + std::to_string(frameID) +
+                " reason=NO_ACCEPT_BUT_GOOD_CHI" +
+                " bestChi=" + std::to_string(trackStateResult.bestChi) +
+                " thr=0.0045" +
+                " epsNorm=" + std::to_string(m_epsNorm) +
+                " maxIters=" + std::to_string(m_maxIterations) +
+                " bestValidPts=" + std::to_string((int)trackStateResult.bestValidPts) +
+                " hadValid=" + std::to_string((int)trackStateResult.hadValid) +
+                " anyAccepted=" + std::to_string((int)trackStateResult.anyAccepted));
+        }
+        else
+        {
+            Logger::LogWarning(
+                "GPU track() FAIL frame=" + std::to_string(frameID) +
+                " reason=GATE" +
+                " failed=" + std::to_string((int)trackStateResult.failed) +
+                " hadValid=" + std::to_string((int)trackStateResult.hadValid) +
+                " anyAccepted=" + std::to_string((int)trackStateResult.anyAccepted) +
+                " bestChi=" + std::to_string(trackStateResult.bestChi));
+        }
+    }
 
 
     {
@@ -925,7 +965,7 @@ bool GLideCompute::track(uint32_t frameID, cv::Mat& pose, float &outChi2, int &o
     }
     m_gpuTrackResult.resultReady.notify_one();
 
-    return anyLevelOk;
+    return ok;
 }
 
 bool GLideCompute::readSSBO(GLuint ssbo, void* destination,size_t numBytes)
