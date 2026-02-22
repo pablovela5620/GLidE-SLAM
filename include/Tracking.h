@@ -39,6 +39,7 @@
 
 #include <mutex>
 class GLideEngine;
+class GLideSettings;
 
 namespace ORB_SLAM2
 {
@@ -48,7 +49,6 @@ class Map;
 class LocalMapping;
 class LoopClosing;
 class System;
-class ImageHandler;
 
 class Tracking
 {  
