@@ -150,6 +150,8 @@ protected:
     bool NeedNewDirectRef();
 
 
+    void updateMotion();
+    void getPrediction();
     void LogFrameType(int frameID, bool isDirect, float chi2, double timestamp);
 
     // In case of performing only localization, this flag is true when there are no matches to

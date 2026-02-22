@@ -13,6 +13,20 @@
 
 struct MotionModel
 {
+    void setParams(float alpha, float beta, float gamma, float maxT, float maxA)
+    {
+        m_alpha = alpha;
+        m_beta = beta;
+        m_gamma = gamma;
+        m_maxT = maxT;
+        m_maxA = maxA;
+    }
+    float m_alpha = 0.2f;
+    float m_beta = 0.1f;
+    float m_gamma = 0.01f;
+    float m_maxT = 2.0f;
+    float m_maxA = 30.0f;
+
     struct Twist
     {
         glm::vec3 t;  // linear velocity/acceleration
@@ -153,14 +167,13 @@ struct MotionModel
         float trans = glm::length(delta.t)/std::max(zRef,1e-6f);
         float rot   = glm::length(delta.w);
 
-        float maxTrans = 2.0f * dt;
-        float maxRot   = glm::radians(180.0f) * dt;
+        float maxTrans = m_maxT * dt;
+        float maxRot   = glm::radians(m_maxA) * dt;
 
         return (trans <= maxTrans) && (rot <= maxRot);
     }
 
-    void update(const glm::mat4& T_meas, float dt,
-                float alpha, float beta, float gamma, float zRef)
+    void update(const glm::mat4& T_meas, float dt, float zRef)
     {
         if (dt < 1e-6f)
             return;
@@ -183,8 +196,8 @@ struct MotionModel
 
         // Pose correction
         Twist corr;
-        corr.t = alpha * delta.t;
-        corr.w = alpha * delta.w;
+        corr.t = m_alpha * delta.t;
+        corr.w = m_alpha * delta.w;
         T = T_pred * expSE3(corr);
 
         // Measured velocity
@@ -198,12 +211,12 @@ struct MotionModel
         a_meas.w = (v_meas.w - v.w) / dt;
 
         // Update velocity
-        v.t = (1.0f - beta)  * (v.t + a.t * dt) + beta  * v_meas.t;
-        v.w = (1.0f - beta)  * (v.w + a.w * dt) + beta  * v_meas.w;
+        v.t = (1.0f - m_beta)  * (v.t + a.t * dt) + m_beta  * v_meas.t;
+        v.w = (1.0f - m_beta)  * (v.w + a.w * dt) + m_beta  * v_meas.w;
 
         // Update acceleration
-        a.t = (1.0f - gamma) * a.t + gamma * a_meas.t;
-        a.w = (1.0f - gamma) * a.w + gamma * a_meas.w;
+        a.t = (1.0f - m_gamma) * a.t + m_gamma * a_meas.t;
+        a.w = (1.0f - m_gamma) * a.w + m_gamma * a_meas.w;
 
         // Clamp acceleration to avoid explosions
         float maxAcc = 10.0f;
