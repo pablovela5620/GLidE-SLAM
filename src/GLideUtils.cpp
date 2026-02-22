@@ -44,6 +44,9 @@ bool GLideUtils::ReadConfigFile(const std::string &path, GLideSettings *GLideSet
     GLideSettings->directTrackParams.nLevels        = fs["DirTrackParams.nLevels"];
     GLideSettings->directTrackParams.scaleFactor    = fs["DirTrackParams.scaleFactor"];
 
+    GLideSettings->directTrackParams.maxFramesDirect= fs["DirTrackParams.maxFramesDirect"];
+    GLideSettings->directTrackParams.maxRecoveryFrames = fs["DirTrackParams.maxRecoveryFrames"];
+
     GLideSettings->directTrackParams.maxPoints      = fs["DirTrackParams.maxPoints"];
     GLideSettings->directTrackParams.enableAlign    = fs["DirTrackParams.enableAlign"];
     GLideSettings->directTrackParams.searchRadius   = fs["DirTrackParams.searchRadius"];

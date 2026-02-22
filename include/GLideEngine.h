@@ -1147,7 +1147,7 @@ class GLideEngine
 {
 public:
     //TODO: separeate methods into private/public
-    GLideEngine(ORB_SLAM2::System* system, GLideSettings* slamSettings) : m_system(system), m_GPUEngineSettings(slamSettings){};
+    GLideEngine(ORB_SLAM2::System* system, GLideSettings* GLidESettings) : m_system(system), m_GPUEngineSettings(GLidESettings){};
 
     bool initialize();
     void run();

@@ -115,6 +115,7 @@ public:
     bool mbOnlyTracking;
 
     void Reset();
+    void SetGLidEParams(GLideSettings *gLideSettings);
 
 protected:
 
@@ -228,6 +229,8 @@ protected:
 
 
     //******************************* GlidE***********************************
+    GLideSettings *mgLideSettings{nullptr};
+
     enum GLidEStates
     {
         WARMUP=0,
@@ -255,10 +258,9 @@ protected:
     bool mbDirectTrackOk{false};
 
     bool mbRecoveryDirectTracking{false};
-    uint32_t mMaxRecoveryFrames{1};
     uint32_t mRecoveryFrameNumber{0};
-
-    uint32_t mMaxFramesDirect{5};
+    uint32_t mMaxRecoveryFrames{1};
+    uint32_t mMaxFramesDirect{0};
 
     float mLastDirectChi2{0.0f};
 

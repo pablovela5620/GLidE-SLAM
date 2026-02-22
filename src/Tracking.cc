@@ -1517,6 +1517,14 @@ namespace ORB_SLAM2
         mpMap->NotifyFramesUpdated();
     }
 
+    void Tracking::SetGLidEParams(GLideSettings *gLideSettings)
+    {
+        mgLideSettings=gLideSettings;
+
+        mMaxFramesDirect = mgLideSettings->directTrackParams.maxFramesDirect;
+        mMaxRecoveryFrames = mgLideSettings->directTrackParams.maxRecoveryFrames;
+    }
+
     void Tracking::SearchLocalPoints()
     {
         // Do not search map points already matched

@@ -35,13 +35,30 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         mbDeactivateLocalizationMode(false)
 {
     // Output welcome message
-    cout << endl <<
-    "ORB-SLAM2 Copyright (C) 2014-2016 Raul Mur-Artal, University of Zaragoza." << endl <<
-    "This program comes with ABSOLUTELY NO WARRANTY;" << endl  <<
-    "This is free software, and you are welcome to redistribute it" << endl <<
-    "under certain conditions. See LICENSE.txt." << endl << endl;
+    std::cout << "\n"
+              << R"(GLidE-SLAM - GL-accelerated Indirect-Direct Embedded SLAM
+Copyright (c) 2025 Carlos Pinheiro / University of Konstanz
 
-    cout << "Input sensor was set to: ";
+This file is part of GLidE-SLAM and is provided under a PROPRIETARY LICENSE.
+Unlike other parts of this project (licensed under GPL-3.0), this file may NOT be:
+  - Used in commercial products without written permission
+  - Redistributed in modified form
+  - Used to train machine learning models
+
+For academic/research use: Free to use with citation.
+For commercial licensing: Contact carlos.pinheiro-de-sousa@uni-konstanz.de
+
+If you use this code in academic work, please cite:
+  [Your IROS paper citation here]
+
+ORB-SLAM2 Copyright (C) 2014-2016 Raul Mur-Artal, University of Zaragoza.
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions. See LICENSE.txt.
+)"
+              << "\n" << std::endl;
+
+    std::cout << "Input sensor was set to: ";
 
     if(mSensor==MONOCULAR)
         cout << "Monocular" << endl;
@@ -97,12 +114,13 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
 
     //Initialize the Viewer thread and launch
+    mpGPUEngineSettings = new GLideSettings();
+    GLideUtils::ReadConfigFile("Examples/Monocular/GLideConfig.yaml", mpGPUEngineSettings);
     if(bUseViewer)
     {
         //Read viewer settings files:
-        mpGPUEngineSettings = new GLideSettings();
-        GLideUtils::ReadConfigFile("Examples/Monocular/GLideConfig.yaml", mpGPUEngineSettings);
-        mpGPUEngine = new GLideEngine(this, mpGPUEngineSettings);
+        if (mpGPUEngineSettings != nullptr)
+            mpGPUEngine = new GLideEngine(this, mpGPUEngineSettings);
         if (mpMap)
             mpGPUEngine->setMap(mpMap);
         mptGPUEngine = new thread(&GLideEngine::run, mpGPUEngine);
@@ -111,7 +129,8 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     }
 
 
-
+    if (mpGPUEngineSettings != nullptr)
+        mpTracker->SetGLidEParams(mpGPUEngineSettings);
     //Set pointers between threads
     mpTracker->SetLocalMapper(mpLocalMapper);
     mpTracker->SetLoopClosing(mpLoopCloser);

@@ -65,6 +65,9 @@ struct GLideSettings
 		float cx{320.1};
 		float cy{247.6};
 
+		int maxRecoveryFrames{1};
+		int maxFramesDirect{0};
+
 		int nLevels{6};
 		int patchSize{7};
 		int maxIterations{5};
