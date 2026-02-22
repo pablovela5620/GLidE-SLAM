@@ -254,8 +254,10 @@ namespace ORB_SLAM2
         mCurrentTimestamp = timestamp;
         mdt = timestamp - mPreviousTimestamp;
 
-
-        bool warmup = mnFrameCounter < mnWarmUpFrames;
+        if (mnFrameCounter > mnWarmUpFrames)
+        {
+            mGLidEState = GLidEStates::DIRECT_TRACK;
+        }
 
         if (mImGray.channels() == 3)
         {
@@ -279,13 +281,13 @@ namespace ORB_SLAM2
         else
         {
 
-            if (!warmup)
+            if (mGLidEState == GLidEStates::DIRECT_TRACK)
             {
                 mCurrentDirectFrame = FrameDirect(mImGray, timestamp, mK, mDistCoef);
                 //(push 8bit, convert to 32F on GPU)
                 mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
             }
-            else
+            else if (mGLidEState == GLidEStates::WARMUP)
             {
                 mCurrentFrame = Frame(mImGray, timestamp, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
             }
@@ -302,7 +304,7 @@ namespace ORB_SLAM2
         float beta = 0.1f;
         float gamma = 0.01f;
 
-        if (warmup && (!(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)))
+        if (mGLidEState == GLidEStates::WARMUP && (!(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)))
         {
             glm::mat4 m;
             for (size_t r = 0; r < 4;++r)
@@ -323,7 +325,9 @@ namespace ORB_SLAM2
                       << " - Trans error: " << trans_error << " m"
                       << " - Rot error: " << glm::degrees(rot_error) << " deg" << std::endl;
 
-            mMotionModel.update(m,mdt,alpha,beta,gamma);
+
+            float zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+            mMotionModel.update(m,mdt,alpha,beta,gamma,zRef);
 
 
             glm::mat4 motionPose = mMotionModel.T;
@@ -380,21 +384,36 @@ namespace ORB_SLAM2
                     // Local Mapping might have changed some MapPoints tracked in last frame
                     CheckReplacedInLastFrame();
 
-                    cv::Mat resultPoseGPU;
+                    cv::Mat resultPoseGLidE;
                     int gpuN;
 
-                    //By this time, the pose should be ready!
-                    mbDirectTrackGPUOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGPU, mLastDirectChi2GPU, gpuN);
-
-                    if (mbDirectTrackGPUOk && !resultPoseGPU.empty())
+                    if (mGLidEState == GLidEStates::DIRECT_TRACK)
                     {
-                        mCurrentDirectFrame.SetPose(resultPoseGPU);
+                        //By this time, the pose should be ready!
+                        mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
+                    }
+
+                    if (mGLidEState == GLidEStates::RECOVER)
+                    {
+                        if (mnFrameCounter >= mpPrevDirectRefID + mMaxRecoveryFrames)
+                        {
+                            mGLidEState = GLidEStates::DIRECT_TRACK;
+                            //By this time, the pose should be ready!
+                            mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
+                        }
+
+                    }
+
+
+                    if (mbDirectTrackOk && !resultPoseGLidE.empty())
+                    {
+                        mCurrentDirectFrame.SetPose(resultPoseGLidE);
                     }
 
                     //is this a good new frame estimate? Is it time to switch to indirect?
-                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2GPU);
+                    bool bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                     mbUseDirectTracking = false;
-                    if (mbDirectTrackGPUOk && !bSwitchToIndirect)
+                    if (mbDirectTrackOk && !bSwitchToIndirect)
                     {
                         // Tween frame: use direct pose, skip TrackLocalMap
                         mCurrentFrame.SetPose(mCurrentDirectFrame.mTcw);
@@ -408,8 +427,10 @@ namespace ORB_SLAM2
                     else
                     {
                         //only build a new indirect frame in case direct failed
+                        mGLidEState = GLidEStates::RECOVER;
                         mCurrentFrame = Frame(mImGray, mCurrentTimestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
                       mThDepth);
+
 
                         if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2)
                         {
@@ -507,14 +528,14 @@ namespace ORB_SLAM2
                     {
                         std::vector<double> directTweenFrameData;
                         mDTweenFrameData = directTweenFrameData;
-                        LogFrameType(mCurrentDirectFrame.mnId, true, mLastDirectChi2GPU, mCurrentDirectFrame.mTimeStamp);
+                        LogFrameType(mCurrentDirectFrame.mnId, true, mLastDirectChi2, mCurrentDirectFrame.mTimeStamp);
                     }
                     else
                     {
                         std::vector<double> indirectTweenFrameData;
                         mTweenFrameData = indirectTweenFrameData;
                         bOK = TrackLocalMap();
-                        LogFrameType(mCurrentFrame.mnId, false, mLastDirectChi2GPU, mCurrentFrame.mTimeStamp);
+                        LogFrameType(mCurrentFrame.mnId, false, mLastDirectChi2, mCurrentFrame.mTimeStamp);
                     }
                 }
             }
@@ -536,7 +557,7 @@ namespace ORB_SLAM2
             //mpFrameDrawer->Update(this);
 
 
-            if (mbDirectTrackGPUOk && mbUseDirectTracking)
+            if (mbDirectTrackOk && mbUseDirectTracking)
             {
                 if (!mLastDirectFrame.mTcw.empty())
                 {
@@ -631,7 +652,7 @@ namespace ORB_SLAM2
                 mLastFrame = Frame(mCurrentFrame);
             }
 
-            if (mbDirectTrackGPUOk)
+            if (mbDirectTrackOk)
                 mLastDirectFrame = FrameDirect(mCurrentDirectFrame);
         }
 

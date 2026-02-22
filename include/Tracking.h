@@ -183,14 +183,7 @@ protected:
     // System
     System* mpSystem;
     
-    //Drawers
-    GLideEngine* mpGLideEngine;
-    //FrameDrawer* mpFrameDrawer;
-    //MapDrawer* mpMapDrawer;
 
-    //used for debugging pose (rot/pos)
-    std::vector<double> mTweenFrameData;
-    std::vector<double> mDTweenFrameData;
 
     //Map
     Map* mpMap;
@@ -230,22 +223,42 @@ protected:
 
     list<MapPoint*> mlpTemporalPoints;
 
-    int mnWarmUpFrames{100};
+
+
+    //******************************* GlidE***********************************
+    enum GLidEStates
+    {
+        WARMUP=0,
+        DIRECT_TRACK=1,
+        RECOVER=1,
+    };
+
+    GLidEStates mGLidEState{GLidEStates::WARMUP};
+
+    //Drawer
+    GLideEngine* mpGLideEngine;
+
+    //used for debugging pose (rot/pos)
+    std::vector<double> mTweenFrameData;
+    std::vector<double> mDTweenFrameData;
+
+    int mnWarmUpFrames{10};
     double mCurrentTimestamp{0.0};
 
-    std::vector<MapPoint*> mvpLocalDirectInliers;
     FrameDirect mLastDirectFrame;
+    uint32_t mpPrevDirectRefID{0};
     cv::Mat mVelocityDirect;
 
     bool mbUseDirectTracking{false};
-    bool mbDirectTrackCPUOk{false};
-    bool mbDirectTrackGPUOk{false};
-    bool mbDirectTrackRecovery{false};
-    uint32_t mpPrevDirectRefID{0};
-    uint32_t mnLastIndirectFrameId{0};
-    int mMaxFramesDirect{10};
-    float mLastDirectChi2CPU{0.0f};
-    float mLastDirectChi2GPU{0.0f};
+    bool mbDirectTrackOk{false};
+
+    bool mbRecoveryDirectTracking{false};
+    uint32_t mMaxRecoveryFrames{3};
+
+    uint32_t mMaxFramesDirect{10};
+
+    float mLastDirectChi2{0.0f};
+
     float mFx{0.0f};
     float mFy{0.0f};
     float mCx{0.0f};

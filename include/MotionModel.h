@@ -147,19 +147,20 @@ struct MotionModel
         return logSE3(dT);
     }
 
-    bool gate(const Twist& delta, float dt)
+    bool gate(const Twist& delta, float dt, float zRef)
     {
-        float trans = glm::length(delta.t);
+        //we normalize by the scene depth
+        float trans = glm::length(delta.t)/std::max(zRef,1e-6f);
         float rot   = glm::length(delta.w);
 
-        float maxTrans = 3.0f * dt;  // 3 m/s
+        float maxTrans = 2.0f * dt;
         float maxRot   = glm::radians(180.0f) * dt;
 
         return (trans <= maxTrans) && (rot <= maxRot);
     }
 
     void update(const glm::mat4& T_meas, float dt,
-                float alpha, float beta, float gamma)
+                float alpha, float beta, float gamma, float zRef)
     {
         if (dt < 1e-6f)
             return;
@@ -174,7 +175,7 @@ struct MotionModel
         glm::mat4 T_pred = predict(dt);
         Twist delta = innovation(T_pred, T_meas);
 
-        if (!gate(delta, dt))
+        if (!gate(delta, dt,zRef))
         {
             T = T_pred;
             return;
