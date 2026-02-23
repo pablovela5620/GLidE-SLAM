@@ -236,7 +236,6 @@ protected:
         WARMUP=0,
         DIRECT_TRACK=1,
         RECOVER=2,
-        RECOVER_EXIT=3
     };
 
     GLidEStates mGLidEState{GLidEStates::WARMUP};

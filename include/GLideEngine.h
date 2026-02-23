@@ -36,8 +36,6 @@
 #include <cmath>
 #include <algorithm>
 
-#include <unordered_set>
-
 //other
 #include <glad/glad.h>
 #include <SDL2/SDL.h>
@@ -70,8 +68,6 @@
 #include "GLideSettings.h"
 #include "Map.h"
 #include "GLideUtils.h"
-
-
 
 #ifndef GLIDE_DEBUG_GL_ERRORS
 #define GLIDE_DEBUG_GL_ERRORS 0

@@ -279,9 +279,8 @@ namespace ORB_SLAM2
             if (mGLidEState == GLidEStates::DIRECT_TRACK)
             {
                 mCurrentDirectFrame = FrameDirect(mImGray, mCurrentTimestamp, mK, mDistCoef);
+                //(push 8bit, convert to 32F on GPU)
                 mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
-                Logger::LogWarning("DirectFrame created: mnId=" + std::to_string(mCurrentDirectFrame.mnId) +
-                   " mnCurrentFrameID=" + std::to_string(mnCurrentFrameID));
             }
             else if (mGLidEState == GLidEStates::WARMUP)
             {
@@ -375,7 +374,7 @@ namespace ORB_SLAM2
                         }
                         else
                         {
-                            Logger::LogWarning("Direct tracking done: Chi2: " + std::to_string(mLastDirectChi2));
+                            Logger::LogWarning("running direct tracking");
                         }
                         bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
                         if (bSwitchToIndirect)
@@ -392,32 +391,75 @@ namespace ORB_SLAM2
                         }
                     }
 
+                    if (mGLidEState == GLidEStates::RECOVER)
+                    {
+                        if (mnCurrentFrameID >= mRecoveryFrameNumber + mMaxRecoveryFrames)
+                        {
+                            updateDirectReference();
 
-                    //Direct tracking was ok, no need to switch
+                            mCurrentDirectFrame = FrameDirect(mImGray, mCurrentTimestamp, mK, mDistCoef);
+
+                            //(push 8bit, convert to 32F on GPU)
+                            mpGLideEngine->updateNewFrame(mCurrentDirectFrame.mnId, mImGray,mLastDirectFrame.mTcw);
+
+                            mGLidEState = GLidEStates::DIRECT_TRACK;
+                            //By this time, the pose should be ready!
+                            mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
+                            if (!mbDirectTrackOk)
+                            {
+                                Logger::LogWarning("Recovery done: Switching to direct Tracknig Failed");
+                            }
+                            else
+                            {
+                                Logger::LogWarning("Recovery done: Switching to direct tracking");
+                            }
+                            bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
+                            if (bSwitchToIndirect)
+                            {
+                                Logger::LogWarning("Switch to indirect");
+
+                            }
+                            else
+                            {
+                                Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
+                                float zRef = 1.0f;
+                                if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                                mMotionModel.checkResidual((float)mdt, mCurrentDirectFrame.mTcw, zRef);
+                                updateMotion(mCurrentDirectFrame.mnId);
+                            }
+                        }
+                    }
+
+
+                    if (mbDirectTrackOk && !resultPoseGLidE.empty())
+                    {
+                        mCurrentDirectFrame.SetPose(resultPoseGLidE);
+                    }
+
+                    //is this a good new frame estimate? Is it time to switch to indirect?
                     mbUseDirectTracking = false;
                     if (mbDirectTrackOk && !bSwitchToIndirect)
                     {
-                        //update pose from direct tracking
-                        if (!resultPoseGLidE.empty())
-                            mCurrentDirectFrame.SetPose(resultPoseGLidE);
-
-                        //indirect Tween frame: use direct pose
+                        // Tween frame: use direct pose, skip TrackLocalMap
                         mCurrentFrame.SetPose(mCurrentDirectFrame.mTcw);
-
-                        //everything good downstream
                         mbUseDirectTracking = true;
                         bOK = true;
 
                         mpMap->AddDirectTweenFrame(mCurrentDirectFrame);
                         mpMap->NotifyFramesUpdated();
-                    }
 
-                    //Switch to indirect
+                    }
                     else
                     {
-                        //create new indirect frame
-                        mCurrentFrame = Frame(mImGray, mCurrentTimestamp, mpORBextractorLeft,
-                            mpORBVocabulary, mK, mDistCoef, mbf,mThDepth);
+                        if (mGLidEState != GLidEStates::RECOVER && mGLidEState != GLidEStates::WARMUP)
+                        {
+                            mRecoveryFrameNumber = mnCurrentFrameID;
+                            mGLidEState = GLidEStates::RECOVER;
+                        }
+
+                        mCurrentFrame = Frame(mImGray, mCurrentTimestamp, mpORBextractorLeft, mpORBVocabulary, mK, mDistCoef, mbf,
+                      mThDepth);
+
 
                         if (mVelocity.empty() || mCurrentFrame.mnId < mnLastRelocFrameId + 2)
                         {
@@ -427,34 +469,6 @@ namespace ORB_SLAM2
                             bOK = TrackWithMotionModel();
                             if (!bOK)
                                 bOK = TrackReferenceKeyFrame();
-                        }
-
-
-                        //after indirect frame crated and updated,
-
-                        if (bOK)
-                        {
-                            //for next frame: if exiting recovery;
-                            //1)update direct frame reference
-                            //2)set state to direct tracking
-                            if (mGLidEState == GLidEStates::RECOVER)
-                            {
-                                if (mnCurrentFrameID >= mRecoveryFrameNumber + mMaxRecoveryFrames)
-                                {
-                                    updateDirectReference();
-                                    mGLidEState = GLidEStates::DIRECT_TRACK;
-                                }
-                            }
-
-                            //otherwise coming from direct tracking:
-                            //either by switch to indirect or bad direct tracking
-                            //->set state to recovery
-                            else if (mGLidEState == GLidEStates::DIRECT_TRACK)
-                            {
-                                mRecoveryFrameNumber = mnCurrentFrameID;
-                                if (mMaxRecoveryFrames > 0)
-                                    mGLidEState = GLidEStates::RECOVER;
-                            }
                         }
                     }
                 }
@@ -590,7 +604,7 @@ namespace ORB_SLAM2
             } else
             {
                 mVelocityDirect = cv::Mat();
-                updateDirectReference();
+                //updateDirectReference();
             }
 
 
@@ -640,10 +654,10 @@ namespace ORB_SLAM2
                         updateDirectReference();
                     }
                     //only for direct tracking
-                    else
+                    /*else
                     {
                        NeedNewDirectRef();
-                    }
+                    }*/
 
                     // We allow points with high innovation (considererd outliers by the Huber Function)
                     // pass to the new keyframe, so that bundle adjustment will finally decide
@@ -677,7 +691,6 @@ namespace ORB_SLAM2
                 mLastDirectFrame = FrameDirect(mCurrentDirectFrame);
         }
 
-        //TODO: CHECK THIS USE DIRECT FRAME?
         // Store frame pose information to retrieve the complete camera trajectory afterwards.
         if (!mCurrentFrame.mTcw.empty())
         {
@@ -1066,6 +1079,9 @@ namespace ORB_SLAM2
 
         //Initialize direct tracking
 
+        //we might actually skip this from now on if using motion model filer
+        // mCurrentDirectFrame = FrameDirect(mCurrentFrame);
+        // updateDirectReference();
 
         glm::mat4 m;
         for (size_t r = 0; r < 4;++r)

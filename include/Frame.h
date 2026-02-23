@@ -251,6 +251,7 @@ class FrameDirect
         cv::Mat mTcw;
         cv::Mat mTwc;
 
+        // Current and Next Frame id.
         static uint32_t nNextId;
         uint32_t mnId;
 

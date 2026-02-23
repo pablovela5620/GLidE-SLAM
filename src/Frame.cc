@@ -52,7 +52,7 @@ FrameDirect::FrameDirect(const FrameDirect &frame) :
 FrameDirect::FrameDirect(const Frame &frame) :
     mTimeStamp(frame.mTimeStamp), mvpMapPoints(frame.mvpMapPoints), mnId(frame.mnId)
 {
-    nNextId = frame.nNextId;
+    //nNextId = frame.nNextId;
     if(!frame.mTcw.empty())
         SetPose(frame.mTcw);
 }
@@ -61,7 +61,10 @@ FrameDirect::FrameDirect(const cv::Mat &imGray, const double &timeStamp, cv::Mat
 
 {
     // Frame ID
-    mnId=nNextId++;
+    mnId=Frame::nNextId++;
+    // auto t1 = std::chrono::high_resolution_clock::now();
+    // float dt = std::chrono::duration<float, std::milli>(t1 - t0).count();
+    // Logger::LogInfoI("pyramid:" + std::to_string(dt));
     // ORB extraction
     //mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
     // Flag to identify outlier associations.
