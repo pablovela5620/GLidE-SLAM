@@ -39,8 +39,8 @@ DirTrackParams.fy: 539.2
 DirTrackParams.cx: 320.1
 DirTrackParams.cy: 247.6
 
-DirTrackParams.maxRecoveryFrames: 1
-DirTrackParams.maxFramesDirect: 0
+DirTrackParams.maxRecoveryFrames: 0
+DirTrackParams.maxFramesDirect: 8
 DirTrackParams.maxPoints: 1024
 DirTrackParams.enableAlign: 1
 DirTrackParams.searchRadius: 5

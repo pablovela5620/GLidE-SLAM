@@ -1212,6 +1212,8 @@ bool GLideCompute::getTrackResult(uint32_t frameID, cv::Mat& pose, float& chi2, 
     //     return false;
     // }
 
+    if (!ready)
+        return false;
 
     pose = m_gpuTrackResult.pose.clone();
     chi2 = m_gpuTrackResult.chi2;
@@ -1907,12 +1909,23 @@ void GLideEngine::updateTweenDirectFrames()
     const std::vector<ORB_SLAM2::FrameDirect>& framesGPU = m_map->GetDirectTweenFrames();
     glm::mat4 pose;
 
+    // std::unordered_set<uint32_t> uniq;
+    // uint32_t dup = 0;
+    // for (auto& f : framesGPU) {
+    //     if (!uniq.insert(f.mnId).second) dup++;
+    // }
+    // Logger::LogWarning("framesGPU=" + std::to_string(framesGPU.size()) +
+    //                    " uniqueIDs=" + std::to_string(uniq.size()) +
+    //                    " dups=" + std::to_string(dup) +
+    //                    " gfx=" + std::to_string(m_tweenFramesDirectGfx.size()));
 
     for (uint32_t n = 0; n < framesGPU.size(); n++)
     {
         convertCVPose2CG(framesGPU[n].mTwc, pose);
 
         uint32_t id = framesGPU[n].mnId;
+
+
 
         //if frame exists already, update pose
         if (m_tweenFramesDirectGfx.count(id))
@@ -1924,13 +1937,13 @@ void GLideEngine::updateTweenDirectFrames()
         {
             FrameGizmo* tempFrame = new FrameGizmo(0, pose, id);
             tempFrame->initialize();
+            m_tweenFramesDirectGfx[framesGPU[n].mnId] = tempFrame;
 
             //if first frame (empty), there should be no parent
-            if (!m_tweenFramesDirectGfx.empty())
-            {
-                tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfx.end())->second);
-            }
-            m_tweenFramesDirectGfx[framesGPU[n].mnId] = tempFrame;
+            // if (!m_tweenFramesDirectGfx.empty())
+            // {
+            //     tempFrame->setParentNode(std::prev(m_tweenFramesDirectGfx.end())->second);
+            // }
         }
     }
 }
