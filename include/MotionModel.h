@@ -255,13 +255,13 @@ struct MotionModel
         const float gateT = m_maxT * dt;
         const float gateRDeg = glm::degrees(glm::radians(m_maxA) * dt);
 
-        std::cout << "Motion residual: "
-                  << "trans=" << trans
-                  << " transNorm=" << transNorm
-                  << " rotDeg=" << rotDeg
-                  << " gateT=" << gateT
-                  << " gateRDeg=" << gateRDeg
-                  << std::endl;
+        // std::cout << "Motion residual: "
+        //           << "trans=" << trans
+        //           << " transNorm=" << transNorm
+        //           << " rotDeg=" << rotDeg
+        //           << " gateT=" << gateT
+        //           << " gateRDeg=" << gateRDeg
+        //           << std::endl;
     }
 
     void reset(const glm::mat4& T_init)

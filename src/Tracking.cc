@@ -368,26 +368,32 @@ namespace ORB_SLAM2
                     {
                         //By this time, the pose should be ready!
                         mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
-                        if (!mbDirectTrackOk)
+                        if (mLogStuff)
                         {
-                            Logger::LogWarning("Direct Tracknig Failed");
-                        }
-                        else
-                        {
-                            Logger::LogWarning("running direct tracking");
+                            if (!mbDirectTrackOk)
+                            {
+                                Logger::LogWarning("Direct Tracknig Failed");
+                            }
+                            else
+                            {
+                                Logger::LogWarning("running direct tracking");
+                            }
                         }
                         bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
-                        if (bSwitchToIndirect)
+                        if (mLogStuff)
                         {
-                            Logger::LogWarning("Switch to indirect");
+                            if (bSwitchToIndirect)
+                            {
+                                Logger::LogWarning("Switch to indirect");
 
-                        }
-                        else
-                        {
-                            Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
-                            float zRef = 1.0f;
-                            if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
-                            updateMotion(mCurrentDirectFrame.mnId);
+                            }
+                            else
+                            {
+                                Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
+                                float zRef = 1.0f;
+                                if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                                updateMotion(mCurrentDirectFrame.mnId);
+                            }
                         }
                     }
 
@@ -405,27 +411,33 @@ namespace ORB_SLAM2
                             mGLidEState = GLidEStates::DIRECT_TRACK;
                             //By this time, the pose should be ready!
                             mbDirectTrackOk = mpGLideEngine->getTrackResult(mCurrentDirectFrame.mnId, resultPoseGLidE, mLastDirectChi2, gpuN);
-                            if (!mbDirectTrackOk)
+                            if (mLogStuff)
                             {
-                                Logger::LogWarning("Recovery done: Switching to direct Tracknig Failed");
-                            }
-                            else
-                            {
-                                Logger::LogWarning("Recovery done: Switching to direct tracking");
+                                if (!mbDirectTrackOk)
+                                {
+                                    Logger::LogWarning("Recovery done: Switching to direct Tracknig Failed");
+                                }
+                                else
+                                {
+                                    Logger::LogWarning("Recovery done: Switching to direct tracking");
+                                }
                             }
                             bSwitchToIndirect = SwitchToIndirect(mLastDirectChi2);
-                            if (bSwitchToIndirect)
+                            if (mLogStuff)
                             {
-                                Logger::LogWarning("Switch to indirect");
+                                if (bSwitchToIndirect)
+                                {
+                                    Logger::LogWarning("Switch to indirect");
 
-                            }
-                            else
-                            {
-                                Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
-                                float zRef = 1.0f;
-                                if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
-                                mMotionModel.checkResidual((float)mdt, mCurrentDirectFrame.mTcw, zRef);
-                                updateMotion(mCurrentDirectFrame.mnId);
+                                }
+                                else
+                                {
+                                    Logger::LogWarning("Checking residual direct frame: " + std::to_string(mCurrentDirectFrame.mnId));
+                                    float zRef = 1.0f;
+                                    if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                                    mMotionModel.checkResidual((float)mdt, mCurrentDirectFrame.mTcw, zRef);
+                                    updateMotion(mCurrentDirectFrame.mnId);
+                                }
                             }
                         }
                     }
@@ -566,10 +578,13 @@ namespace ORB_SLAM2
                         bOK = TrackLocalMap();
                         LogFrameType(mCurrentFrame.mnId, false, mLastDirectChi2, mCurrentFrame.mTimeStamp);
 
-                        Logger::LogWarning("Checking residual indirect frame: " + std::to_string(mCurrentFrame.mnId));
-                        float zRef = 1.0f;
-                        if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
-                        updateMotion(mCurrentFrame.mnId);
+                        if (mLogStuff)
+                        {
+                            Logger::LogWarning("Checking residual indirect frame: " + std::to_string(mCurrentFrame.mnId));
+                            float zRef = 1.0f;
+                            if (mpLastKeyFrame) zRef = mpLastKeyFrame->ComputeSceneMedianDepth(2);
+                            updateMotion(mCurrentFrame.mnId);
+                        }
                     }
                 }
             }
@@ -1111,10 +1126,6 @@ namespace ORB_SLAM2
 
     bool Tracking::TrackReferenceKeyFrame()
     {
-        Logger::LogInfoII(
-            "CPU Indirect Tracker: Tracking with Ref Frames: " + std::to_string(mCurrentFrame.mnId) + " - " +
-            std::to_string(mpReferenceKF->mnFrameId));
-
         // Compute Bag of Words vector
         mCurrentFrame.ComputeBoW();
 

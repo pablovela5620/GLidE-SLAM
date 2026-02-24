@@ -274,6 +274,7 @@ protected:
     double mdt;
     MotionModel mMotionModel;
 
+    bool mLogStuff{false};
 };
 
 } //namespace ORB_SLAM
