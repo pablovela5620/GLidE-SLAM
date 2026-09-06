@@ -6,7 +6,7 @@ Reads the artefacts a ``mono_tum`` run leaves in its working directory
 onto the ground truth with a Sim(3) Umeyama fit, and logs the whole thing to a
 Rerun recording.
 
-Two upstream quirks shape the loading code:
+Three upstream quirks shape the loading code:
 
 * ``FrameTrajectory.txt`` carries a stale timestamp on every direct frame,
   because ``Tracking::Track`` stores ``mCurrentFrame.mTimeStamp`` and
@@ -18,6 +18,10 @@ Two upstream quirks shape the loading code:
   sequence.  Its rows are therefore joined to the trajectory by order, and the
   join is checked against the direct/indirect pattern that the stale timestamps
   themselves encode.
+* ``gpuTimings.csv`` stamps a GPU job with the id of the ``FrameDirect`` built for
+  that image, but an image that ends up indirect burns one more ``Frame::nNextId``
+  and it is *that* id which reaches ``frame_types.txt``.  Every ``preCompute`` row
+  is therefore one id short of its typed frame; see ``join_gpu_timings``.
 """
 
 from __future__ import annotations
@@ -46,6 +50,12 @@ GT_COLOR = (128, 128, 128)
 EST_COLOR = (255, 160, 0)
 
 MAX_ASSOCIATION_DT_S = 0.020
+
+# How many ids a GPU row is behind its frame_types.txt row when the image turned out
+# to be indirect.  ``GLideEngine::m_sourceFrameID`` is only refreshed by
+# ``updateNewFrame`` (src/GLideEngine.cpp:1519), i.e. by the direct-tracking path, so
+# every GPU row carries the id of the ``FrameDirect`` built at src/Tracking.cc:281.
+GPU_INDIRECT_ID_OFFSET = 1
 
 
 @dataclass
@@ -98,6 +108,28 @@ class FrameTypeRow:
     frame_id: int
     is_direct: bool
     chi2: float
+
+
+@dataclass
+class GpuTimingRow:
+    """One row of ``gpuTimings.csv``, before it is joined to a typed frame."""
+
+    stage: str
+    """``imagePyramid``, ``preCompute`` or ``track``."""
+    frame_id: int
+    """The ``frame`` column, which is not always the id ``frame_types.txt`` logs."""
+    time_ms: float
+    """Wall time of the stage in milliseconds."""
+
+
+@dataclass
+class GpuTimingJoin:
+    """GPU stage times keyed by ``frame_types.txt`` id, plus how well they joined."""
+
+    by_frame: dict[int, dict[str, float]]
+    """frame id -> {stage: milliseconds}."""
+    coverage: dict[str, tuple[int, int]]
+    """stage -> (rows joined onto a typed frame, rows read)."""
 
 
 @dataclass
@@ -169,24 +201,58 @@ def load_frame_types(path: Path) -> list[FrameTypeRow]:
     return rows
 
 
-def load_gpu_timings(path: Path) -> dict[int, dict[str, float]]:
-    """Map frame id -> {stage: ms} from ``gpuTimings.csv``.
+def load_gpu_timings(path: Path) -> list[GpuTimingRow]:
+    """Read ``gpuTimings.csv`` in file order.
 
     ``track`` rows carry two undeclared extra columns, so only the first three
     fields are read.
     """
-    out: dict[int, dict[str, float]] = {}
+    rows: list[GpuTimingRow] = []
     if not path.is_file():
-        return out
+        return rows
     for line in path.read_text(errors="replace").splitlines()[1:]:
         fields = line.split(",")
         if len(fields) < 3:
             continue
         try:
-            out.setdefault(int(fields[1]), {})[fields[0].strip()] = float(fields[2])
+            rows.append(GpuTimingRow(stage=fields[0].strip(), frame_id=int(fields[1]), time_ms=float(fields[2])))
         except ValueError:
             continue
-    return out
+    return rows
+
+
+def join_gpu_timings(rows: list[GpuTimingRow], typed_ids: set[int]) -> GpuTimingJoin:
+    """Attach GPU stage times to the frame ids that ``frame_types.txt`` logs.
+
+    The ``frame`` column is ``GLideEngine::m_sourceFrameID``, the id of the
+    ``FrameDirect`` that ``Tracking`` builds for the image (``src/Tracking.cc:281``).
+    Only ``updateNewFrame`` writes that field, so the ``preCompute`` job that
+    ``updateRefFrame`` posts reuses whatever the current image left there.  When the
+    direct result is rejected, the image is re-tracked indirectly, which rebuilds
+    ``mCurrentFrame`` (``src/Tracking.cc:472``) and takes the *next* ``Frame::nNextId``
+    -- and ``frame_types.txt`` logs that later id.
+
+    Tie rule: a row belongs to its own id when that id is typed (the image stayed
+    direct), otherwise to ``id + GPU_INDIRECT_ID_OFFSET`` (the image turned indirect).
+    Since a new direct reference can only be built from an indirect frame's map points,
+    *every* ``preCompute`` row takes the second branch.  Rows matching neither id are
+    dropped: the warm-up ones carry frame 0, which is never typed.  Where several rows
+    land on one frame and stage, the last wins.
+    """
+    by_frame: dict[int, dict[str, float]] = {}
+    counters: dict[str, list[int]] = {}
+    for row in rows:
+        counts = counters.setdefault(row.stage, [0, 0])
+        counts[1] += 1
+        if row.frame_id in typed_ids:
+            frame_id = row.frame_id
+        elif row.frame_id + GPU_INDIRECT_ID_OFFSET in typed_ids:
+            frame_id = row.frame_id + GPU_INDIRECT_ID_OFFSET
+        else:
+            continue
+        counts[0] += 1
+        by_frame.setdefault(frame_id, {})[row.stage] = row.time_ms
+    return GpuTimingJoin(by_frame=by_frame, coverage={stage: (c[0], c[1]) for stage, c in counters.items()})
 
 
 def load_rgb_index(path: Path) -> tuple[np.ndarray, list[str]]:
@@ -300,20 +366,15 @@ def make_blueprint() -> rrb.Blueprint:
     return rrb.Blueprint(
         rrb.Horizontal(
             rrb.Spatial3DView(origin="/world", name="Map and trajectories", contents=["/world/**"]),
+            # One series per view: chi2 (~0.003), ate_error_m (~0.1 m), is_direct (0/1) and
+            # direct_utilization_pct (0-100) share no usable y range.  is_direct and
+            # direct_utilization_pct stay logged and reachable from the streams panel.
             rrb.Vertical(
                 rrb.Spatial2DView(origin="/world/camera/image", name="Camera"),
-                rrb.TimeSeriesView(
-                    origin="/metrics",
-                    name="Tracking",
-                    contents=[
-                        "/metrics/chi2",
-                        "/metrics/is_direct",
-                        "/metrics/ate_error_m",
-                        "/metrics/direct_utilization_pct",
-                    ],
-                ),
+                rrb.TimeSeriesView(origin="/metrics/ate_error_m", name="ATE error (m)"),
+                rrb.TimeSeriesView(origin="/metrics/chi2", name="Photometric chi2"),
                 rrb.TimeSeriesView(origin="/metrics/gpu", name="GPU stage time (ms)"),
-                row_shares=[3, 2, 2],
+                row_shares=[3, 1.5, 1.5, 2],
             ),
             column_shares=[3, 2],
         ),
@@ -376,7 +437,7 @@ def main(cfg: Config) -> None:
     keyframes = load_tum_trajectory(run_dir / "KeyFrameTrajectory.txt")
     ground_truth = load_tum_trajectory(data_dir / "groundtruth.txt")
     frame_types = load_frame_types(run_dir / "frame_types.txt")
-    gpu_timings = load_gpu_timings(run_dir / "gpuTimings.csv")
+    gpu_rows = load_gpu_timings(run_dir / "gpuTimings.csv")
     rgb_stamps, rgb_names = load_rgb_index(data_dir / "rgb.txt")
 
     if len(raw_estimate) == 0:
@@ -404,6 +465,7 @@ def main(cfg: Config) -> None:
         for j in range(m):
             chi2[j + 1] = frame_types[j].chi2
             frame_ids[j + 1] = frame_types[j].frame_id
+    gpu_join = join_gpu_timings(gpu_rows, {int(fid) for fid in frame_ids if fid >= 0})
 
     # Associate estimate -> ground truth by nearest timestamp.
     gt_idx = nearest_indices(estimate.timestamps, ground_truth.timestamps)
@@ -476,7 +538,7 @@ def main(cfg: Config) -> None:
         rr.log("/metrics/direct_utilization_pct", rr.Scalars(100.0 * direct_seen / (i + 1)))
         if np.isfinite(per_pose_error[i]):
             rr.log("/metrics/ate_error_m", rr.Scalars(float(per_pose_error[i])))
-        for stage, value in gpu_timings.get(int(frame_ids[i]), {}).items():
+        for stage, value in gpu_join.by_frame.get(int(frame_ids[i]), {}).items():
             rr.log(f"/metrics/gpu/{stage}", rr.Scalars(value))
         rr.log("/frame_type", rr.TextLog(f"image {int(association.image_indices[i])}: {kind}"))
 
@@ -497,6 +559,10 @@ def main(cfg: Config) -> None:
     print(f"keyframes                : {len(keyframes)}")
     print(f"direct frames            : {direct_total} of {n} = {100.0 * direct_total / n:.1f} %")
     print(f"frame_types agreement    : {type_agreement}")
+    for stage in sorted(gpu_join.coverage):
+        matched, total = gpu_join.coverage[stage]
+        label = f"gpu join {stage}"
+        print(f"{label:<25s}: {matched}/{total} rows ({100.0 * matched / total:.1f} %)")
     print(f"restamped trajectory     : {restamp_source}")
     print(f"Sim(3) scale             : {alignment.scale:.6f}")
     print(f"ATE RMSE (ours)          : {ours_rmse:.6f} m")

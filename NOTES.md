@@ -186,8 +186,25 @@ joined to the trajectory by order, not by timestamp.
 
 **Frame IDs are not image indices.** After commit `3d25f7b` `FrameDirect` draws from
 `Frame::nNextId` as well, so an indirect image consumes two IDs and a direct one consumes one.
-The IDs in `frame_types.txt` and the `frame` column of `gpuTimings.csv` are consistent with
-each other — that is what makes the GPU-stage join work — but they are not sequence positions.
+The IDs in `frame_types.txt` and the `frame` column of `gpuTimings.csv` come from that one
+counter, but they are not sequence positions, and for the same image they are not always the
+same ID — see the next gotcha.
+
+**`gpuTimings.csv` is one ID behind `frame_types.txt` on every indirect frame.** The `frame`
+column is `GLideEngine::m_sourceFrameID`, and only `updateNewFrame` ever writes it
+(`src/GLideEngine.cpp:1519`), so a GPU row carries the ID of the `FrameDirect` built for that
+image at `src/Tracking.cc:281`. When the direct result is rejected the image is re-tracked
+indirectly: `mCurrentFrame` is rebuilt at `src/Tracking.cc:472`, taking the next
+`Frame::nNextId`, and `LogFrameType` records **that** ID. `updateRefFrame` does not touch
+`m_sourceFrameID` at all, and a new direct reference can only be built from an indirect frame's
+map points (`Tracking::updateDirectReference`), so every `preCompute` row is exactly one ID
+short of its typed frame. glide-1 says so unambiguously: 0 of 774 `preCompute` rows match a
+typed ID, all 768 that match `id + 1` land on an `indirect` row, while `id - 1` matches a
+meaningless mix of 601 `direct` and 167 `indirect` rows; the 6 leftovers are warm-up rows
+stamped with frame 0. `demo_rerun.join_gpu_timings` therefore joins a row to its own ID when
+that ID is typed and to `id + 1` otherwise, and prints the coverage per stage. Before that fix
+`/metrics/gpu/preCompute` was silently missing from the recording, and 527 `track` rows — the
+frames whose direct result was rejected — were dropped as well.
 
 **`FrameTrajectory.txt` carries stale timestamps on every direct frame.** This is the one that
 actually changes the numbers. `Tracking::Track` appends `mCurrentFrame.mTimeStamp` for every
@@ -389,10 +406,16 @@ pixi run rerun out/glide-tum3.rrd
 
 From `out/runs/glide-1`: 2557 poses over images 28-2584, 188 keyframes, 2019 direct frames
 (79.0 %), 2557 RGB images at JPEG quality 80 with stride 1. The file is 102 MiB (`rerun rrd
-stats`: 1702 chunks, 24885 rows, 213 entity paths, 101.1 MiB compressed IPC). Two checks run
-with it: the direct/indirect pattern derived from the stale timestamps agreed with
-`frame_types.txt` on 2556 of 2556 rows, and the demo's own Sim(3)-aligned ATE RMSE of
-0.095023 m matched `evo_ape tum ... -as` on `FrameTrajectory_restamped.txt` to 3.9e-07 m.
+stats`: 1835 chunks, 26468 rows, 216 entity paths — 203 in the recording, 13 in the blueprint —
+101.5 MiB compressed IPC). Three checks run with it: the direct/indirect pattern derived from
+the stale timestamps agreed with `frame_types.txt` on 2556 of 2556 rows, the GPU rows joined
+onto typed frames at 2546/2546 (`track`), 3314/3320 (`imagePyramid`) and 768/774
+(`preCompute`), and the demo's own Sim(3)-aligned ATE RMSE of 0.095023 m matched
+`evo_ape tum ... -as` on `FrameTrajectory_restamped.txt` to 3.9e-07 m. The right-hand column of
+the blueprint is one view per quantity — camera, ATE error, photometric chi2, GPU stage times —
+because chi2 (~0.003), ATE (~0.1 m) and a 0-100 percentage share no usable y range;
+`is_direct` and `direct_utilization_pct` are still logged and reachable from the streams
+panel.
 glide-1 is the least accurate of the three complete runs (0.095 m against 0.032 m and 0.031 m
 for glide-2 and glide-4); `--run-dir out/runs/glide-2` shows the better end of the spread.
 
