@@ -109,10 +109,22 @@ Other tasks:
 
 The runs need an X display, because the engine always creates its two SDL windows and calls
 `eglCreateWindowSurface` on the X11 handle even when `Viewer.render` is 0. `pixi.toml` sets
-`DISPLAY`, `XAUTHORITY` and `XDG_RUNTIME_DIR` for the local desktop session; override them
-in the environment if yours differ.
+`DISPLAY`, `XAUTHORITY` and `XDG_RUNTIME_DIR` **only for `linux-aarch64`**, where they describe
+the Raspberry Pi 5's local Wayfire session. On any other host — including every `linux-64` one —
+export them yourself before calling pixi, pointing at a session that actually has a GPU behind
+it:
 
-See `NOTES.md` for the measured numbers on a Raspberry Pi 5, and for the upstream quirks the
+```bash
+export DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority   # adjust to your session
+pixi run demo
+```
+
+`SDL_VIDEODRIVER` and `__EGL_VENDOR_LIBRARY_DIRS` are shared by both platforms: the same ICD
+directory resolves to Mesa `v3d` on the Pi and to NVIDIA on a desktop, so the GPU driver always
+comes from the host and never from conda-forge.
+
+See `NOTES.md` for the measured numbers on a Raspberry Pi 5 and on an RTX 3060 desktop, for the
+three-way comparison against the paper's laptop figures, and for the upstream quirks the
 benchmark has to work around.
 
 ## Usage

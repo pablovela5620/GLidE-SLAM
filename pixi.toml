@@ -3,7 +3,7 @@ name = "glide-slam"
 version = "0.1.0"
 description = "GLidE-SLAM: ORB-SLAM2 with an OpenGL ES 3.1 compute-shader direct tracker, packaged with pixi"
 channels = ["conda-forge"]
-platforms = ["linux-aarch64"]
+platforms = ["linux-aarch64", "linux-64"]
 
 [dependencies]
 # --- toolchain ---
@@ -38,12 +38,31 @@ huggingface_hub = "*"
 # The GLidE engine always opens two SDL windows and calls eglCreateWindowSurface
 # on the X11 handle, even with Viewer.render: 0, so an X display is required.
 SDL_VIDEODRIVER = "x11"
+# conda-forge ships the glvnd loader but no GPU driver of its own. Point the
+# loader at the host ICD directory: it resolves to Mesa v3d on the Raspberry Pi
+# and to NVIDIA on a desktop.
+__EGL_VENDOR_LIBRARY_DIRS = "/usr/share/glvnd/egl_vendor.d"
+# Extra Eigen defines for the vendored g2o; see [target.linux-64.activation.env].
+G2O_EIGEN_FLAGS = ""
+
+# The Raspberry Pi 5 session these were written for. On any other host, export
+# DISPLAY and XAUTHORITY yourself before calling pixi.
+[target.linux-aarch64.activation.env]
 DISPLAY = ":0"
 XAUTHORITY = "$HOME/.Xauthority"
 XDG_RUNTIME_DIR = "/run/user/1000"
-# conda-forge ships the glvnd loader but no v3d driver. Point the loader at the
-# host Mesa ICD so EGL resolves to the Raspberry Pi 5 VideoCore VII GPU.
-__EGL_VENDOR_LIBRARY_DIRS = "/usr/share/glvnd/egl_vendor.d"
+
+[target.linux-64.activation.env]
+# g2o and libGLidE_SLAM share g2o's headers, and the root CMakeLists compiles
+# the SLAM side with -DEIGEN_DONT_VECTORIZE, which pins EIGEN_MAX_ALIGN_BYTES
+# to 0. Both trees also compile with -march=native. On x86-64 that enables AVX,
+# so a g2o without the define gets EIGEN_MAX_ALIGN_BYTES = 32 and the two sides
+# disagree about how Eigen's buffers are allocated and released. The first
+# global bundle adjustment then frees a pointer the other side never allocated
+# and mono_tum dies with SIGSEGV inside VertexSE3Expmap::~VertexSE3Expmap.
+# aarch64 tops out at 16 bytes, where both sides fall through to plain
+# malloc/free, so the Raspberry Pi build never needed this.
+G2O_EIGEN_FLAGS = "-DEIGEN_DONT_VECTORIZE -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT"
 
 # ------------------------------------------------------------------------------
 # Build
@@ -52,16 +71,16 @@ __EGL_VENDOR_LIBRARY_DIRS = "/usr/share/glvnd/egl_vendor.d"
 # Plain shell guards, not pixi inputs/outputs: every artefact below is gitignored
 # and pixi's file-change cache does not track gitignored paths reliably.
 [tasks._build-dbow2]
-cmd = "test -f Thirdparty/DBoW2/lib/libDBoW2.so || (cmake -S Thirdparty/DBoW2 -B Thirdparty/DBoW2/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build Thirdparty/DBoW2/build -j4)"
+cmd = "test -f Thirdparty/DBoW2/lib/libDBoW2.so || (cmake -S Thirdparty/DBoW2 -B Thirdparty/DBoW2/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build Thirdparty/DBoW2/build -j$(nproc))"
 
 [tasks._build-g2o]
-cmd = "test -f Thirdparty/g2o/lib/libg2o.so || (cmake -S Thirdparty/g2o -B Thirdparty/g2o/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_PREFIX_PATH=$CONDA_PREFIX -DCMAKE_CXX_FLAGS=-DEIGEN_DONT_ALIGN_STATICALLY && cmake --build Thirdparty/g2o/build -j4)"
+cmd = "test -f Thirdparty/g2o/lib/libg2o.so || (cmake -S Thirdparty/g2o -B Thirdparty/g2o/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_PREFIX_PATH=$CONDA_PREFIX -DCMAKE_CXX_FLAGS=\"-DEIGEN_DONT_ALIGN_STATICALLY $G2O_EIGEN_FLAGS\" && cmake --build Thirdparty/g2o/build -j$(nproc))"
 
 [tasks._extract-vocab]
 cmd = "test -f Vocabulary/ORBvoc.txt || tar -xzf Vocabulary/ORBvoc.txt.tar.gz -C Vocabulary"
 
 [tasks._build-slam]
-cmd = "test -f Examples/Monocular/mono_tum || (cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build build -j4)"
+cmd = "test -f Examples/Monocular/mono_tum || (cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build build -j$(nproc))"
 depends-on = ["_build-dbow2", "_build-g2o"]
 
 [tasks.build]
