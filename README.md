@@ -78,6 +78,16 @@ This will:
 
 ## Run with pixi
 
+### Tested platforms
+
+| platform | machine | GPU / driver | GL renderer string | GLidE median frame time (full-coverage runs) | ORB median frame time | status |
+|---|---|---|---|---|---|---|
+| `linux-aarch64` | Raspberry Pi 5 (BCM2712) | VideoCore VII, Mesa 24.2.8 `v3d` | `V3D 7.1.10.2` | 17.0 ms | 74.5 ms | works |
+| `linux-64` | `pablo-ubuntu` desktop | NVIDIA GeForce RTX 3060, driver 595.84 | `NVIDIA GeForce RTX 3060/PCIe/SSE2` | 11.5 ms | 54.0 ms | works (needs the `linux-64` g2o Eigen flags, see `NOTES.md`) |
+
+`pixi.lock` solves both platforms from one manifest; see `NOTES.md` for the ATE, tracking-loss
+and GPU-stage caveats behind these numbers.
+
 [pixi](https://pixi.prefix.dev) builds the project, fetches the sample sequence and runs the
 demo without installing anything system-wide. Every dependency except the GPU driver comes
 from conda-forge; the driver has to be the host's Mesa, because conda-forge ships no `v3d`
