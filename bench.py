@@ -29,6 +29,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import statistics
 import subprocess
 import sys
@@ -450,9 +451,17 @@ def build_report(results: list[RunResult]) -> tuple[str, dict[str, object]]:
         if r.mode in ("glide", "orb") and r.log_timing == 1 and Path(r.run_dir).name == f"{r.mode}-{r.index}":
             by_mode.setdefault(r.mode, []).append(r)
 
-    lines: list[str] = ["# GLidE-SLAM on Raspberry Pi 5 (VideoCore VII / v3d)", ""]
     renderers = sorted({r.gl_renderer for r in results if r.gl_renderer})
     images = max((r.images_in_sequence for r in results), default=0)
+    # Name the machine the runs happened on. The renderer comes from the same
+    # `GL Renderer` line of run.log that the header below quotes, so the two can
+    # never disagree; --report over an empty out/runs has none, and the hostname
+    # stands alone.
+    title: str = f"GLidE-SLAM on {socket.gethostname()}"
+    if renderers:
+        title += f" ({renderers[0]})"
+
+    lines: list[str] = [f"# {title}", ""]
     lines += [
         f"Sequence: `rgbd_dataset_freiburg3_long_office_household` (TUM RGB-D, {images} images)",
         f"GL renderer: `{renderers[0] if renderers else 'unknown'}`",
