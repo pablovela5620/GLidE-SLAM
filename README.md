@@ -76,6 +76,45 @@ This will:
 - Mesa 24.x+ recommended for best Panfrost (Mali) support
 - Kernel 6.1+ for optimal ARM GPU drivers
 
+## Run with pixi
+
+[pixi](https://pixi.prefix.dev) builds the project, fetches the sample sequence and runs the
+demo without installing anything system-wide. Every dependency except the GPU driver comes
+from conda-forge; the driver has to be the host's Mesa, because conda-forge ships no `v3d`
+(VideoCore) or Panfrost user-space driver. `pixi.toml` therefore points the glvnd loader at
+`/usr/share/glvnd/egl_vendor.d`.
+
+```bash
+pixi run demo
+```
+
+That single task builds DBoW2, g2o and `libGLidE_SLAM.so`, extracts the ORB vocabulary,
+downloads `rgbd_dataset_freiburg3_long_office_household` from the Hugging Face Hub, runs
+`mono_tum` on the GPU and writes a Rerun recording to `out/glide-tum3.rrd`. Open it with:
+
+```bash
+pixi run rerun out/glide-tum3.rrd
+```
+
+Other tasks:
+
+| task | what it does |
+|---|---|
+| `pixi run build` | build the vendored dependencies and `mono_tum` (no-op once built) |
+| `pixi run run-glide` | one GLidE run into `out/runs/glide-1/` |
+| `pixi run run-orb` | one indirect-only baseline run into `out/runs/orb-1/` |
+| `pixi run bench` | five runs of each mode, then `out/metrics.md` and `out/metrics.json` |
+| `pixi run demo-upstream` | one GLidE run with the native SDL viewer (`Viewer.render: 1`) |
+| `pixi run eval` | `evo_ape` against the TUM ground truth |
+
+The runs need an X display, because the engine always creates its two SDL windows and calls
+`eglCreateWindowSurface` on the X11 handle even when `Viewer.render` is 0. `pixi.toml` sets
+`DISPLAY`, `XAUTHORITY` and `XDG_RUNTIME_DIR` for the local desktop session; override them
+in the environment if yours differ.
+
+See `NOTES.md` for the measured numbers on a Raspberry Pi 5, and for the upstream quirks the
+benchmark has to work around.
+
 ## Usage
 
 ### TUM Dataset Example

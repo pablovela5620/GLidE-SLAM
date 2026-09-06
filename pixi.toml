@@ -1,0 +1,102 @@
+[workspace]
+name = "glide-slam"
+version = "0.1.0"
+description = "GLidE-SLAM: ORB-SLAM2 with an OpenGL ES 3.1 compute-shader direct tracker, packaged with pixi"
+channels = ["conda-forge"]
+platforms = ["linux-aarch64"]
+
+[dependencies]
+# --- toolchain ---
+c-compiler = "*"
+cxx-compiler = "*"
+cmake = ">=3.10"
+make = "*"
+ninja = "*"
+pkg-config = "*"
+
+# --- C++ libraries ---
+opencv = "4.*"
+eigen = "3.4.*"
+sdl2 = "*"
+glm = "*"
+libegl-devel = "*"
+libgles-devel = "*"
+libopengl-devel = "*"
+libglx-devel = "*"
+libglvnd-devel = "*"
+
+# --- python side (demo / bench / eval) ---
+python = "3.12.*"
+numpy = "*"
+tyro = "*"
+rerun-sdk = "0.37.*"
+evo = "1.31.*"
+# provides the `hf` CLI used by the _download-data task
+huggingface_hub = "*"
+
+[activation.env]
+# The GLidE engine always opens two SDL windows and calls eglCreateWindowSurface
+# on the X11 handle, even with Viewer.render: 0, so an X display is required.
+SDL_VIDEODRIVER = "x11"
+DISPLAY = ":0"
+XAUTHORITY = "$HOME/.Xauthority"
+XDG_RUNTIME_DIR = "/run/user/1000"
+# conda-forge ships the glvnd loader but no v3d driver. Point the loader at the
+# host Mesa ICD so EGL resolves to the Raspberry Pi 5 VideoCore VII GPU.
+__EGL_VENDOR_LIBRARY_DIRS = "/usr/share/glvnd/egl_vendor.d"
+
+# ------------------------------------------------------------------------------
+# Build
+# ------------------------------------------------------------------------------
+
+# Plain shell guards, not pixi inputs/outputs: every artefact below is gitignored
+# and pixi's file-change cache does not track gitignored paths reliably.
+[tasks._build-dbow2]
+cmd = "test -f Thirdparty/DBoW2/lib/libDBoW2.so || (cmake -S Thirdparty/DBoW2 -B Thirdparty/DBoW2/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build Thirdparty/DBoW2/build -j4)"
+
+[tasks._build-g2o]
+cmd = "test -f Thirdparty/g2o/lib/libg2o.so || (cmake -S Thirdparty/g2o -B Thirdparty/g2o/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_PREFIX_PATH=$CONDA_PREFIX -DCMAKE_CXX_FLAGS=-DEIGEN_DONT_ALIGN_STATICALLY && cmake --build Thirdparty/g2o/build -j4)"
+
+[tasks._extract-vocab]
+cmd = "test -f Vocabulary/ORBvoc.txt || tar -xzf Vocabulary/ORBvoc.txt.tar.gz -C Vocabulary"
+
+[tasks._build-slam]
+cmd = "test -f Examples/Monocular/mono_tum || (cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build build -j4)"
+depends-on = ["_build-dbow2", "_build-g2o"]
+
+[tasks.build]
+depends-on = ["_build-dbow2", "_build-g2o", "_extract-vocab", "_build-slam"]
+
+# ------------------------------------------------------------------------------
+# Data
+# ------------------------------------------------------------------------------
+
+[tasks._download-data]
+cmd = "test -f data/rgbd_dataset_freiburg3_long_office_household/rgb.txt || hf download pablovela5620/glide-slam-example --repo-type dataset --local-dir data"
+
+# ------------------------------------------------------------------------------
+# Runs / benchmarking
+# ------------------------------------------------------------------------------
+
+[tasks.run-glide]
+cmd = "python bench.py --mode glide --runs 1"
+depends-on = ["build", "_download-data"]
+
+[tasks.run-orb]
+cmd = "python bench.py --mode orb --runs 1"
+depends-on = ["build", "_download-data"]
+
+[tasks.bench]
+cmd = "python bench.py --mode glide --runs 5 && python bench.py --mode orb --runs 5 && python bench.py --report"
+depends-on = ["build", "_download-data"]
+
+[tasks.demo]
+cmd = "test -d out/runs/glide-1 || python bench.py --mode glide --runs 1 && mkdir -p out && python -u demo_rerun.py --run-dir out/runs/glide-1 --rr-config.headless --rr-config.save out/glide-tum3.rrd"
+depends-on = ["build", "_download-data"]
+
+[tasks.demo-upstream]
+cmd = "python bench.py --mode glide --runs 1 --render --run-name upstream-viewer"
+depends-on = ["build", "_download-data"]
+
+[tasks.eval]
+cmd = "evo_ape tum data/rgbd_dataset_freiburg3_long_office_household/groundtruth.txt out/runs/glide-1/FrameTrajectory.txt -as"

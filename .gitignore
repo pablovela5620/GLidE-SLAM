@@ -65,3 +65,13 @@ Examples/Stereo/stereo_*
 Examples/RGB-D/rgbd_*
 # Only ignore uncompressed vocabulary
 Vocabulary/ORBvoc.txt
+
+# pixi
+.pixi/
+
+# python bytecode from bench.py / demo_rerun.py
+__pycache__/
+
+# downloaded TUM sequence and benchmark output (see NOTES.md)
+data/
+out/
