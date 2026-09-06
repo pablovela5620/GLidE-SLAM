@@ -694,8 +694,14 @@ in the middle.
 ### What was not verified
 
 Only `linux-64` and `linux-aarch64` are in `platforms`, and only these two hosts were run. The
-`eval` and `demo-upstream` tasks were not exercised on the desktop. `bench.py` still hardcodes
-`# GLidE-SLAM on Raspberry Pi 5 (VideoCore VII / v3d)` as the title of `out/metrics.md`
-(`bench.py:453`), so the generated report carries the wrong machine name on any other host; only
-the `GL renderer:` line beneath it is derived from the run. The tables above are copied from that
-report with the title dropped.
+`eval` and `demo-upstream` tasks were not exercised on the desktop.
+
+The first desktop report was generated while `bench.py` still hardcoded
+`# GLidE-SLAM on Raspberry Pi 5 (VideoCore VII / v3d)` as the title of `out/metrics.md`, so it
+named the wrong machine; only the `GL renderer:` line beneath it came from the runs. `b081c65`
+builds the title from `socket.gethostname()` and that same renderer string, so the two cannot
+disagree, and falls back to the hostname alone when no run has been parsed. The regenerated
+report opens `# GLidE-SLAM on pablo-ubuntu (NVIDIA GeForce RTX 3060/PCIe/SSE2)`. Regenerating it
+changed line 1 and nothing else — `out/metrics.json` came back byte-identical — so every number
+in the tables above is the one the benchmark produced; they are copied from that report below
+its title.
